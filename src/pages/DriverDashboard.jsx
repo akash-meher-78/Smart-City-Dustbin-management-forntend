@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MapView from "../components/dashboard/MapView";
 import { authApi, userApi } from "../utils/api";
@@ -13,6 +13,7 @@ const DriverDashboard = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [userName, setUserName] = useState(localStorage.getItem("smartbin-user-name") || "Driver");
+  const hasCheckedSession = useRef(false);
   const defaultDriverLocation = useMemo(() => ({ lat: 20.2961, lng: 85.8245 }), []);
 
   const sortedByPriority = useMemo(
@@ -84,13 +85,28 @@ const DriverDashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (hasCheckedSession.current) return;
+    hasCheckedSession.current = true;
+
     let mounted = true;
     (async () => {
+      const hasSession = Boolean(localStorage.getItem("auth-token") || localStorage.getItem("smartbin-role"));
+      if (!hasSession) {
+        navigate("/");
+        return;
+      }
+
       const res = await userApi.getCurrent();
       if (!mounted) return;
 
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) navigate("/");
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem("smartbin-role");
+          localStorage.removeItem("smartbin-user-name");
+          localStorage.removeItem("auth-token");
+          localStorage.removeItem("smartbin-email");
+          navigate("/");
+        }
         return;
       }
 

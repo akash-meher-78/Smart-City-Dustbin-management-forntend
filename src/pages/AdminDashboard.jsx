@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MapView from "../components/dashboard/MapView";
 import BinManager from "../components/dashboard/BinManager";
@@ -8,7 +8,6 @@ import adminApi from "../utils/adminApi";
 const statCards = [
   { label: "Total Bins", key: "total", accent: "border-(--color-primary-50)" },
   { label: "Needs Pickup", key: "critical", accent: "border-(--color-primary-60)" },
-  { label: "Vans Active", key: "activeVans", accent: "border-(--color-accent-60)" },
   { label: "Pickups Today", key: "completed", accent: "border-(--color-accent-50)" },
 ];
 
@@ -17,12 +16,11 @@ const sidebarItems = ["Dashboard", "All Bins", "Routes & Map", "Vehicles", "Aler
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [liveBins, setLiveBins] = useState([]);
-  const [allUsers, setAllUsers] = useState([]);
-  const [drivers, setDrivers] = useState([]);
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [userName, setUserName] = useState(localStorage.getItem("smartbin-user-name") || "Admin");
+  const hasCheckedSession = useRef(false);
   const defaultDriverLocation = useMemo(() => ({ lat: 20.2961, lng: 85.8245 }), []);
 
   const stats = useMemo(() => {
@@ -30,7 +28,6 @@ const AdminDashboard = () => {
     return {
       total: liveBins.length,
       critical: active.filter((bin) => bin.fill >= 80).length,
-      activeVans: 1,
       completed: liveBins.length - active.length,
     };
   }, [liveBins]);
@@ -50,11 +47,6 @@ const AdminDashboard = () => {
       })),
     [sortedByPriority]
   );
-
-  const driverUsers = useMemo(() => {
-    if (drivers.length > 0) return drivers;
-    return allUsers.filter((user) => String(user?.role || "").toLowerCase() === "driver");
-  }, [drivers, allUsers]);
 
   const fetchBinsData = useCallback(async () => {
     const res = await adminApi.getAllBins();
@@ -104,13 +96,28 @@ const AdminDashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (hasCheckedSession.current) return;
+    hasCheckedSession.current = true;
+
     let mounted = true;
     (async () => {
+      const hasSession = Boolean(localStorage.getItem("auth-token") || localStorage.getItem("smartbin-role"));
+      if (!hasSession) {
+        navigate("/");
+        return;
+      }
+
       const res = await adminApi.getCurrentUser();
       if (!mounted) return;
 
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) navigate("/");
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem("smartbin-role");
+          localStorage.removeItem("smartbin-user-name");
+          localStorage.removeItem("auth-token");
+          localStorage.removeItem("smartbin-email");
+          navigate("/");
+        }
         return;
       }
 
@@ -132,29 +139,6 @@ const AdminDashboard = () => {
       mounted = false;
     };
   }, [navigate]);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const [usersRes, driversRes] = await Promise.all([adminApi.getAllUsers(), adminApi.getAllDrivers()]);
-      if (!mounted) return;
-
-      if (usersRes.ok) {
-        const usersPayload = usersRes.data?.users || usersRes.data?.data?.users || usersRes.data?.data || usersRes.data;
-        setAllUsers(Array.isArray(usersPayload) ? usersPayload : []);
-      }
-
-      if (driversRes.ok) {
-        const driversPayload =
-          driversRes.data?.drivers || driversRes.data?.data?.drivers || driversRes.data?.data || driversRes.data;
-        setDrivers(Array.isArray(driversPayload) ? driversPayload : []);
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const handleCreateBin = async (payload) => {
     const res = await adminApi.createBin(payload);
@@ -208,25 +192,8 @@ const AdminDashboard = () => {
 
     if (activeSection === "Vehicles") {
       return (
-        <section className="rounded-2xl border border-(--color-accent-25) bg-(--color-card-90) p-4 shadow-lg">
+        <section className="max-h-[calc(100vh-11rem)] overflow-y-auto rounded-2xl border border-(--color-accent-25) bg-(--color-card-90) p-4 shadow-lg">
           <h2 className="text-xl font-bold text-(--color-text) mb-3">Driver & Vehicle</h2>
-          <div className="space-y-2.5 text-(--color-text-muted)">
-            <div className="rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">
-              <p className="font-semibold text-(--color-text)">Drivers ({driverUsers.length})</p>
-            </div>
-            {driverUsers.length === 0 ? (
-              <div className="rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">No driver users available</div>
-            ) : (
-              driverUsers.map((user, index) => (
-                <div
-                  key={user.id || user._id || user.email || `driver-${index}`}
-                  className="rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3"
-                >
-                  <p className="font-semibold text-(--color-text)">{user.name || user.fullName || "Unknown User"}</p>
-                </div>
-              ))
-            )}
-          </div>
         </section>
       );
     }
