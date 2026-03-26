@@ -54,7 +54,7 @@ const Login = ({ onRegister }) => {
                     localStorage.setItem('smartbin-user-name', userData?.name || username.trim() || (apiRole === 'admin' ? 'Admin' : 'Driver'));
                     if (authToken) localStorage.setItem('auth-token', authToken);
 
-                    navigate('/dashboard');
+                    navigate(apiRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
                 } else {
                     const errorMsg = res.data?.message || res.data?.error || res.data?.details || 'Login failed';
                     setFormMessage(`Login failed: ${errorMsg}`);

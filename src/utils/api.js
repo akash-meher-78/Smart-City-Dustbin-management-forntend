@@ -35,10 +35,15 @@ export const API_ENDPOINTS = {
     update: "/api/user/update",
     deleteCurrent: "/api/user/delete",
   },
+  driver: {
+    all: "/api/drivers",
+    byId: (driverId) => `/api/driver/${encodeURIComponent(driverId)}`,
+  },
   bin: {
     all: "/api/bin/all",
     create: "/api/bin/create",
     byId: (binId) => `/api/bin/${encodeURIComponent(binId)}`,
+    deleteWithBody: "/api/bin/delete",
     deleteById: (binId) => `/api/bin/${encodeURIComponent(binId)}`,
     deleteByIdAlt: (binId) => `/api/bin/delete/${encodeURIComponent(binId)}`,
   },
@@ -106,10 +111,23 @@ export const binApi = {
   create: (payload) => apiFetch(API_ENDPOINTS.bin.create, { method: "POST", body: payload }),
   getById: (binId) => apiFetch(API_ENDPOINTS.bin.byId(binId)),
   deleteById: async (binId) => {
+    const bodyDelete = await apiFetch(API_ENDPOINTS.bin.deleteWithBody, {
+      method: "DELETE",
+      body: { binId },
+    });
+    if (bodyDelete.ok || (bodyDelete.status !== 404 && bodyDelete.status !== 405)) {
+      return bodyDelete;
+    }
+
     const primary = await apiFetch(API_ENDPOINTS.bin.deleteById(binId), { method: "DELETE" });
     if (primary.ok || primary.status !== 404) return primary;
     return apiFetch(API_ENDPOINTS.bin.deleteByIdAlt(binId), { method: "DELETE" });
   },
+};
+
+export const driverApi = {
+  getAll: () => apiFetch(API_ENDPOINTS.driver.all),
+  getById: (driverId) => apiFetch(API_ENDPOINTS.driver.byId(driverId)),
 };
 
 export default apiFetch;
