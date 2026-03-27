@@ -43,34 +43,25 @@ const Register = ({ onLogin, setIsVerifying}) => {
 
         setFormMessage('');
         
-        // Call register endpoint
+        // Send OTP first, then register only after OTP verification succeeds.
         (async () => {
             try {
                 setIsLoading(true);
                 const payload = { name, email, password, role };
-                
-                const res = await authApi.register(payload);
 
-                if (res.ok) {
-                    // Persist email BEFORE sending OTP
-                    localStorage.setItem('smartbin-email', email);
-                    localStorage.setItem('smartbin-role', role);
-                    localStorage.setItem('smartbin-user-name', name.trim());
-                    
-                    // Now send OTP
-                    const otpPayload = { email };
-                    const otpRes = await authApi.sendOtp(otpPayload);
-                    
-                    if (!otpRes.ok) {
-                        const errorMsg = otpRes.data?.message || otpRes.data?.error || otpRes.data?.details || 'OTP sending failed';
-                        setFormMessage(`Registration succeeded but OTP sending failed: ${errorMsg}`);
-                        return;
-                    }
-                    setIsVerifying(true);
-                } else {
-                    const errorMsg = res.data?.message || res.data?.error || res.data?.details || 'Registration failed';
-                    setFormMessage(`Registration failed: ${errorMsg}`);
+                localStorage.setItem('smartbin-email', email);
+                localStorage.setItem('smartbin-role', role);
+                localStorage.setItem('smartbin-user-name', name.trim());
+                localStorage.setItem('smartbin-pending-registration', JSON.stringify(payload));
+
+                const otpRes = await authApi.sendOtp({ email });
+                if (!otpRes.ok) {
+                    const errorMsg = otpRes.data?.message || otpRes.data?.error || otpRes.data?.details || 'OTP sending failed';
+                    setFormMessage(`OTP sending failed: ${errorMsg}`);
+                    return;
                 }
+
+                setIsVerifying(true);
                 setName('');
                 setEmail('');
                 setPassword('');

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MapView from "../components/dashboard/MapView";
 import BinManager from "../components/dashboard/BinManager";
+import RouteAssignmentPanel from "../components/dashboard/RouteAssignmentPanel";
 import { authApi } from "../utils/api";
 import adminApi from "../utils/adminApi";
 
@@ -9,13 +10,69 @@ const statCards = [
   { label: "Total Bins", key: "total", accent: "border-(--color-primary-50)" },
   { label: "Needs Pickup", key: "critical", accent: "border-(--color-primary-60)" },
   { label: "Pickups Today", key: "completed", accent: "border-(--color-accent-50)" },
+  { label: "Drivers Active", key: "vansActive", accent: "border-(--color-accent-60)" },
 ];
 
-const sidebarItems = ["Dashboard", "All Bins", "Routes & Map", "Vehicles", "Alerts"];
+const sidebarItems = ["Dashboard", "All Bins", "Routes & Map", "Driver", "Alerts"];
+
+const parseLocation = (rawLocation) => {
+  if (typeof rawLocation !== "string") return { lat: null, lng: null };
+  const [latStr, lngStr] = rawLocation.split(",").map((v) => v.trim());
+  const parsedLat = Number(latStr);
+  const parsedLng = Number(lngStr);
+  return {
+    lat: Number.isFinite(parsedLat) ? parsedLat : null,
+    lng: Number.isFinite(parsedLng) ? parsedLng : null,
+  };
+};
+
+const buildDummyBins = () => [
+  {
+    id: "BIN-DUMMY-001",
+    fill: 92,
+    lat: 20.3001,
+    lng: 85.8224,
+    pickedUp: false,
+    updatedAt: Date.now(),
+  },
+  {
+    id: "BIN-DUMMY-002",
+    fill: 74,
+    lat: 20.2948,
+    lng: 85.8311,
+    pickedUp: false,
+    updatedAt: Date.now(),
+  },
+  {
+    id: "BIN-DUMMY-003",
+    fill: 58,
+    lat: 20.2873,
+    lng: 85.8185,
+    pickedUp: false,
+    updatedAt: Date.now(),
+  },
+  {
+    id: "BIN-DUMMY-004",
+    fill: 36,
+    lat: 20.3056,
+    lng: 85.8362,
+    pickedUp: false,
+    updatedAt: Date.now(),
+  },
+];
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [liveBins, setLiveBins] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+  const [driversError, setDriversError] = useState("");
+  const [driverActionMessage, setDriverActionMessage] = useState("");
+  const [removingDriverId, setRemovingDriverId] = useState("");
+  const [driverToRemove, setDriverToRemove] = useState(null);
+  const [isAssigningRoute, setIsAssigningRoute] = useState(false);
+  const [assignFeedback, setAssignFeedback] = useState(null);
+  const [assignedRouteBins, setAssignedRouteBins] = useState([]);
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -29,8 +86,9 @@ const AdminDashboard = () => {
       total: liveBins.length,
       critical: active.filter((bin) => bin.fill >= 80).length,
       completed: liveBins.length - active.length,
+      vansActive: drivers.length,
     };
-  }, [liveBins]);
+  }, [drivers.length, liveBins]);
 
   const sortedByPriority = useMemo(
     () => [...liveBins].filter((bin) => !bin.pickedUp).sort((a, b) => b.fill - a.fill),
@@ -49,24 +107,69 @@ const AdminDashboard = () => {
   );
 
   const fetchBinsData = useCallback(async () => {
-    const res = await adminApi.getAllBins();
+    const res = await adminApi.getBinFillLevels();
     const payload = res.data;
     const serverBins = Array.isArray(payload?.bins) ? payload.bins : Array.isArray(payload) ? payload : [];
 
     if (!res.ok) {
-      setLiveBins([]);
+      setLiveBins(buildDummyBins());
       return;
     }
 
-    const normalized = serverBins.map((s, index) => ({
-      id: s.binId || s.id || `BIN-${index + 1}`,
-      fill: Number.isFinite(s.fill) ? s.fill : Number(s.fill || 0),
-      lat: Number(s.lat ?? s.location?.lat ?? 20.2961),
-      lng: Number(s.lng ?? s.location?.lng ?? 85.8245),
-      pickedUp: false,
-      updatedAt: s.lastUpdated || s.updatedAt || Date.now(),
-    }));
-    setLiveBins(normalized);
+    const normalized = serverBins.map((s, index) => {
+      const parsedLocation = parseLocation(s.location);
+      const fillValue = Number(s.fill?.value ?? s.fill ?? 0);
+      return {
+        id: s.binId || s.id || `BIN-${index + 1}`,
+        fill: Number.isFinite(fillValue) ? fillValue : 0,
+        lat: Number(s.lat ?? s.location?.lat ?? parsedLocation.lat ?? 20.2961),
+        lng: Number(s.lng ?? s.location?.lng ?? parsedLocation.lng ?? 85.8245),
+        pickedUp: false,
+        updatedAt: s.lastUpdated || s.updatedAt || Date.now(),
+      };
+    });
+    setLiveBins(normalized.length ? normalized : buildDummyBins());
+  }, []);
+
+  const fetchDriversData = useCallback(async () => {
+    setDriversLoading(true);
+    setDriversError("");
+
+    try {
+      const res = await adminApi.getAllDrivers();
+      if (!res.ok) {
+        const message = res?.data?.message || res?.data?.error || "Failed to fetch drivers";
+        setDrivers([]);
+        setDriversError(message);
+        return;
+      }
+
+      const payload = res.data;
+      const serverDrivers = Array.isArray(payload?.drivers)
+        ? payload.drivers
+        : Array.isArray(payload?.data?.drivers)
+        ? payload.data.drivers
+        : Array.isArray(payload)
+        ? payload
+        : [];
+
+      const normalized = serverDrivers
+        .filter((driver) => String(driver?.role || "").toLowerCase() === "driver")
+        .map((driver) => ({
+          id: driver._id || driver.id || "",
+          name: driver.name || "Unnamed driver",
+          email: driver.email || "-",
+          role: driver.role || "driver",
+          createdAt: driver.createdAt || null,
+        }));
+
+      setDrivers(normalized);
+    } catch (error) {
+      setDrivers([]);
+      setDriversError(error?.message || "Failed to fetch drivers");
+    } finally {
+      setDriversLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -96,6 +199,11 @@ const AdminDashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (activeSection !== "Driver" && activeSection !== "Routes & Map") return;
+    fetchDriversData();
+  }, [activeSection, fetchDriversData]);
+
+  useEffect(() => {
     if (hasCheckedSession.current) return;
     hasCheckedSession.current = true;
 
@@ -107,31 +215,18 @@ const AdminDashboard = () => {
         return;
       }
 
-      const res = await adminApi.getCurrentUser();
-      if (!mounted) return;
-
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          localStorage.removeItem("smartbin-role");
-          localStorage.removeItem("smartbin-user-name");
-          localStorage.removeItem("auth-token");
-          localStorage.removeItem("smartbin-email");
-          navigate("/");
-        }
-        return;
-      }
-
-      const u = res.data?.user || res.data?.data?.user || res.data?.data || res.data;
-      const normalizedRole = String(u?.role || localStorage.getItem("smartbin-role") || "").toLowerCase();
+      const normalizedRole = String(localStorage.getItem("smartbin-role") || "").toLowerCase();
       if (normalizedRole && normalizedRole !== "admin") {
         localStorage.setItem("smartbin-role", normalizedRole);
         navigate("/dashboard/driver");
         return;
       }
 
-      if (u?.name) {
-        setUserName(u.name);
-        localStorage.setItem("smartbin-user-name", u.name);
+      if (!mounted) return;
+
+      const storedName = localStorage.getItem("smartbin-user-name");
+      if (storedName) {
+        setUserName(storedName);
       }
     })();
 
@@ -154,12 +249,89 @@ const AdminDashboard = () => {
 
   const handleGetBinById = async (binId) => adminApi.getBinById(binId);
 
+  const handleAssignRoute = async ({ driver, bins, binIds }) => {
+    setAssignFeedback(null);
+    setIsAssigningRoute(true);
+
+    try {
+      const payload = {
+        driverId: driver.id,
+        driverName: driver.name,
+        driverEmail: driver.email,
+        binIds,
+      };
+
+      const res = await adminApi.assignRoute(payload);
+      if (!res?.ok) {
+        const message =
+          res?.data?.message ||
+          res?.data?.error ||
+          res?.data?.details ||
+          "Failed to assign route";
+        setAssignFeedback({ type: "error", message: `Route assignment failed: ${message}` });
+        return;
+      }
+
+      setAssignedRouteBins(bins);
+      setAssignFeedback({
+        type: "success",
+        message: `Route assigned to ${driver.name} (${driver.email}) with ${binIds.length} bin(s).`,
+      });
+    } finally {
+      setIsAssigningRoute(false);
+    }
+  };
+
+  const handleRemoveDriver = (driver) => {
+    const driverId = String(driver?.id || "").trim();
+    if (!driverId) {
+      setDriverActionMessage("Unable to remove this driver: missing driver ID.");
+      return;
+    }
+
+    setDriverToRemove(driver);
+  };
+
+  const handleConfirmRemoveDriver = async () => {
+    if (!driverToRemove) return;
+    const driverId = String(driverToRemove?.id || "").trim();
+    if (!driverId) {
+      setDriverActionMessage("Unable to remove this driver: missing driver ID.");
+      setDriverToRemove(null);
+      return;
+    }
+
+    setRemovingDriverId(driverId);
+    setDriverActionMessage("");
+
+    try {
+      const res = await adminApi.deleteDriverById(driverId);
+      if (!res?.ok) {
+        const message =
+          res?.data?.message ||
+          res?.data?.error ||
+          res?.data?.details ||
+          "Failed to remove driver";
+        setDriverActionMessage(`Remove failed: ${message}`);
+        setDriverToRemove(null);
+        return;
+      }
+
+      setDriverActionMessage(`Driver ${driverToRemove.name} removed successfully.`);
+      await fetchDriversData();
+      setDriverToRemove(null);
+    } finally {
+      setRemovingDriverId("");
+    }
+  };
+
   const handleLogout = async () => {
     await authApi.logout();
     localStorage.removeItem("smartbin-role");
     localStorage.removeItem("smartbin-user-name");
     localStorage.removeItem("auth-token");
     localStorage.removeItem("smartbin-email");
+    localStorage.removeItem("smartbin-driver-id");
     navigate("/");
   };
 
@@ -183,17 +355,80 @@ const AdminDashboard = () => {
       return (
         <section className="rounded-2xl border border-(--color-accent-25) bg-(--color-card-90) p-4 shadow-lg">
           <h2 className="text-xl font-bold text-(--color-text) mb-3">Routes & Map</h2>
-          <div className="h-105 overflow-hidden rounded-xl border border-(--color-accent-25)">
-            <MapView bins={liveBins} routeBins={sortedByPriority} driverLocation={defaultDriverLocation} />
+          <RouteAssignmentPanel
+            drivers={drivers}
+            bins={sortedByPriority}
+            isAssigning={isAssigningRoute}
+            onAssignRoute={handleAssignRoute}
+            assignFeedback={assignFeedback}
+          />
+          <div className="mt-4 h-105 overflow-hidden rounded-xl border border-(--color-accent-25)">
+            <MapView
+              bins={liveBins}
+              routeBins={assignedRouteBins.length > 0 ? assignedRouteBins : sortedByPriority}
+              driverLocation={defaultDriverLocation}
+            />
           </div>
         </section>
       );
     }
 
-    if (activeSection === "Vehicles") {
+    if (activeSection === "Driver") {
       return (
         <section className="max-h-[calc(100vh-11rem)] overflow-y-auto rounded-2xl border border-(--color-accent-25) bg-(--color-card-90) p-4 shadow-lg">
-          <h2 className="text-xl font-bold text-(--color-text) mb-3">Driver & Vehicle</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-(--color-text)">Driver Name</h2>
+            <button
+              type="button"
+              onClick={fetchDriversData}
+              className="rounded-md border border-(--color-accent-25) bg-(--color-card) px-3 py-1.5 text-xs font-semibold text-(--color-text-muted)"
+            >
+              Refresh Drivers
+            </button>
+          </div>
+
+          {driversLoading ? (
+            <p className="text-sm text-(--color-text-muted)">Loading drivers...</p>
+          ) : null}
+
+          {!driversLoading && driversError ? (
+            <p className="text-sm text-red-400">{driversError}</p>
+          ) : null}
+
+          {driverActionMessage ? (
+            <p className={`mb-3 text-sm ${driverActionMessage.startsWith("Remove failed") ? "text-red-400" : "text-green-400"}`}>
+              {driverActionMessage}
+            </p>
+          ) : null}
+
+          {!driversLoading && !driversError && drivers.length === 0 ? (
+            <p className="text-sm text-(--color-text-muted)">No drivers registered yet.</p>
+          ) : null}
+
+          {!driversLoading && !driversError && drivers.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {drivers.map((driver, index) => (
+                <article key={driver.id || `${driver.email}-${index}`} className="rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">
+                  <p className="font-semibold text-(--color-text)">{driver.name}</p>
+                  <p className="text-sm text-(--color-text-muted)">{driver.email}</p>
+                  <p className="mt-1 text-xs uppercase tracking-wider text-(--color-text-soft)">{driver.role}</p>
+                  {driver.createdAt ? (
+                    <p className="mt-1 text-xs text-(--color-text-soft)">
+                      Joined {new Date(driver.createdAt).toLocaleDateString()}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={removingDriverId === driver.id}
+                    onClick={() => handleRemoveDriver(driver)}
+                    className="mt-3 rounded-md border border-red-400/60 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {removingDriverId === driver.id ? "Removing..." : "Remove Driver"}
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : null}
         </section>
       );
     }
@@ -324,7 +559,7 @@ const AdminDashboard = () => {
           </div>
         </aside>
 
-        <aside className="hidden lg:flex lg:w-72 xl:w-80 flex-col border-r border-(--color-accent-20) bg-(--color-card-90) backdrop-blur-sm">
+        <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-72 xl:w-80 flex-col overflow-hidden border-r border-(--color-accent-20) bg-(--color-card-90) backdrop-blur-sm">
           <div className="p-6 border-b border-(--color-accent-15)">
             <h2 className="text-2xl font-bold text-(--color-text)">Smart Waste Management System</h2>
           </div>
@@ -387,6 +622,39 @@ const AdminDashboard = () => {
           {renderSection()}
         </main>
       </div>
+
+      {driverToRemove ? (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-(--color-overlay) px-4">
+          <div className="w-full max-w-md rounded-2xl border border-(--color-accent-25) bg-(--color-card-95) p-5 shadow-2xl">
+            <h3 className="text-xl font-bold text-(--color-text)">Remove Driver</h3>
+            <p className="mt-2 text-sm text-(--color-text-muted)">
+              Are you sure you want to remove this driver?
+            </p>
+            <div className="mt-3 rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">
+              <p className="font-semibold text-(--color-text)">{driverToRemove.name}</p>
+              <p className="text-sm text-(--color-text-muted)">{driverToRemove.email}</p>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDriverToRemove(null)}
+                className="rounded-md border border-(--color-accent-25) bg-(--color-card) px-4 py-2 text-sm font-semibold text-(--color-text-muted)"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemoveDriver}
+                disabled={removingDriverId === driverToRemove.id}
+                className="rounded-md border border-red-400/60 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {removingDriverId === driverToRemove.id ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

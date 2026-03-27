@@ -37,7 +37,7 @@ const Login = ({ onRegister }) => {
         (async () => {
             try {
                 setIsLoading(true);
-                const payload = { name: username, email: username, password, role };
+                const payload = { email: username, password };
                 const res = await authApi.login(payload);
 
                 if (res.ok) {
@@ -52,6 +52,9 @@ const Login = ({ onRegister }) => {
                     localStorage.setItem('smartbin-email', username.trim());
                     localStorage.setItem('smartbin-role', apiRole);
                     localStorage.setItem('smartbin-user-name', userData?.name || username.trim() || (apiRole === 'admin' ? 'Admin' : 'Driver'));
+                    if (userData?._id || userData?.id) {
+                        localStorage.setItem('smartbin-driver-id', userData?._id || userData?.id);
+                    }
                     if (authToken) localStorage.setItem('auth-token', authToken);
 
                     navigate(apiRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
@@ -148,7 +151,7 @@ const Login = ({ onRegister }) => {
                             type={showPassword ? 'text' : 'password'}
                             value={password}
                             onChange={handleChange}
-                            className="w-full bg-(--color-card) border border-(--color-accent-35) rounded-lg px-4 py-3 pr-12 text-(--color-text) placeholder:text-(--color-text-soft) focus:outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-25) transition-all"
+                            className="login-password-input w-full bg-(--color-card) border border-(--color-accent-35) rounded-lg px-4 py-3 pr-12 text-(--color-text) placeholder:text-(--color-text-soft) focus:outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-25) transition-all"
                             placeholder="Enter your password"
                         />
                         <button

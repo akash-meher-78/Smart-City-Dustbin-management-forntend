@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { authApi } from '../../utils/api';
 
 const VerifyOtp = ({ setIsVerifying }) => {
-    const [otp, setOtp] = useState(new Array(4).fill(""));
+    const [otp, setOtp] = useState(new Array(6).fill(""));
     const [seconds, setSeconds] = useState(59);
     const [formMessage, setFormMessage] = useState('');
     const inputRefs = useRef([]);
@@ -23,7 +23,7 @@ const VerifyOtp = ({ setIsVerifying }) => {
         newOtp[index] = element.value.substring(element.value.length - 1);
         setOtp(newOtp);
 
-        if (element.value && index < 3) {
+        if (element.value && index < otp.length - 1) {
             inputRefs.current[index + 1].focus();
         }
     };
@@ -83,20 +83,51 @@ const VerifyOtp = ({ setIsVerifying }) => {
                                 return;
                             }
 
+                            if (enteredOtp.length !== 6) {
+                                setFormMessage('Please enter the 6-digit OTP.');
+                                return;
+                            }
+
                             const payload = { email, otp: enteredOtp };
                             const res = await authApi.verifyOtp(payload);
                             
                             if (res.ok) {
+                                const pendingRaw = localStorage.getItem('smartbin-pending-registration');
+                                if (!pendingRaw) {
+                                    setFormMessage('Registration details missing. Please register again.');
+                                    setIsVerifying(false);
+                                    return;
+                                }
+
+                                let pendingPayload;
+                                try {
+                                    pendingPayload = JSON.parse(pendingRaw);
+                                } catch {
+                                    setFormMessage('Invalid registration details. Please register again.');
+                                    setIsVerifying(false);
+                                    return;
+                                }
+
+                                const registerRes = await authApi.register(pendingPayload);
+                                if (!registerRes.ok) {
+                                    const registerErr = registerRes.data?.message || registerRes.data?.error || registerRes.data?.details || 'Registration failed';
+                                    setFormMessage(`Registration failed: ${registerErr}`);
+                                    return;
+                                }
+
                                 setFormMessage('');
-                                const selectedRole = localStorage.getItem('smartbin-role') || 'driver';
+                                const userData = registerRes.data?.user || registerRes.data?.data?.user || registerRes.data?.userData || {};
+                                const selectedRole = userData?.role || pendingPayload?.role || localStorage.getItem('smartbin-role') || 'driver';
                                 const authToken =
-                                    res.data?.token ||
-                                    res.data?.accessToken ||
-                                    res.data?.data?.token ||
-                                    res.data?.data?.accessToken;
+                                    registerRes.data?.token ||
+                                    registerRes.data?.accessToken ||
+                                    registerRes.data?.data?.token ||
+                                    registerRes.data?.data?.accessToken;
                                 localStorage.setItem('smartbin-role', selectedRole);
+                                localStorage.setItem('smartbin-user-name', userData?.name || pendingPayload?.name || 'User');
                                 if (authToken) localStorage.setItem('auth-token', authToken);
-                                navigate('/dashboard');
+                                localStorage.removeItem('smartbin-pending-registration');
+                                navigate(selectedRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
                             } else {
                                 const errorMsg = res.data?.message || res.data?.error || res.data?.details || 'OTP verification failed';
                                 setFormMessage(`OTP verification failed: ${errorMsg}`);

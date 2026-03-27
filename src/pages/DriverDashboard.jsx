@@ -1,18 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MapView from "../components/dashboard/MapView";
-import { authApi, userApi } from "../utils/api";
+import { authApi } from "../utils/api";
 import driverApiService from "../utils/driverApi";
 
 const driverSidebarItems = ["Today's Route", "Live Map", "Alerts"];
 
+const parseLocation = (rawLocation) => {
+  if (typeof rawLocation !== "string") return { lat: null, lng: null };
+  const [latStr, lngStr] = rawLocation.split(",").map((v) => v.trim());
+  const parsedLat = Number(latStr);
+  const parsedLng = Number(lngStr);
+  return {
+    lat: Number.isFinite(parsedLat) ? parsedLat : null,
+    lng: Number.isFinite(parsedLng) ? parsedLng : null,
+  };
+};
+
 const DriverDashboard = () => {
   const navigate = useNavigate();
   const [liveBins, setLiveBins] = useState([]);
+  const [assignedRouteBins, setAssignedRouteBins] = useState([]);
+  const [routeError, setRouteError] = useState("");
   const [activeSection, setActiveSection] = useState("Today's Route");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [userName, setUserName] = useState(localStorage.getItem("smartbin-user-name") || "Driver");
+  const [driverProfile, setDriverProfile] = useState({
+    id: localStorage.getItem("smartbin-driver-id") || "",
+    email: localStorage.getItem("smartbin-email") || "",
+  });
   const hasCheckedSession = useRef(false);
   const defaultDriverLocation = useMemo(() => ({ lat: 20.2961, lng: 85.8245 }), []);
 
@@ -32,12 +49,30 @@ const DriverDashboard = () => {
     [sortedByPriority]
   );
 
-  const driverStops = useMemo(() => sortedByPriority.slice(0, 8), [sortedByPriority]);
+  const driverStops = useMemo(() => {
+    if (assignedRouteBins.length > 0) {
+      return assignedRouteBins.filter((bin) => !bin.pickedUp);
+    }
+    return sortedByPriority.slice(0, 8);
+  }, [assignedRouteBins, sortedByPriority]);
   const completedStops = driverStops.filter((bin) => bin.pickedUp).length;
   const progress = driverStops.length === 0 ? 0 : Math.round((completedStops / driverStops.length) * 100);
 
+  const normalizeBin = useCallback((serverBin, index) => {
+    const parsedLocation = parseLocation(serverBin.location);
+    const fillValue = Number(serverBin.fill?.value ?? serverBin.fill ?? 0);
+    return {
+      id: serverBin.binId || serverBin.id || `BIN-${index + 1}`,
+      fill: Number.isFinite(fillValue) ? fillValue : 0,
+      lat: Number(serverBin.lat ?? serverBin.location?.lat ?? parsedLocation.lat ?? 20.2961),
+      lng: Number(serverBin.lng ?? serverBin.location?.lng ?? parsedLocation.lng ?? 85.8245),
+      pickedUp: Boolean(serverBin.pickedUp || serverBin.isCollected || serverBin.collected),
+      updatedAt: serverBin.lastUpdated || serverBin.updatedAt || Date.now(),
+    };
+  }, []);
+
   const fetchBinsData = useCallback(async () => {
-    const res = await driverApiService.getAllBins();
+    const res = await driverApiService.getBinFillLevels();
     const payload = res.data;
     const serverBins = Array.isArray(payload?.bins) ? payload.bins : Array.isArray(payload) ? payload : [];
 
@@ -46,23 +81,55 @@ const DriverDashboard = () => {
       return;
     }
 
-    const normalized = serverBins.map((s, index) => ({
-      id: s.binId || s.id || `BIN-${index + 1}`,
-      fill: Number.isFinite(s.fill) ? s.fill : Number(s.fill || 0),
-      lat: Number(s.lat ?? s.location?.lat ?? 20.2961),
-      lng: Number(s.lng ?? s.location?.lng ?? 85.8245),
-      pickedUp: false,
-      updatedAt: s.lastUpdated || s.updatedAt || Date.now(),
-    }));
+    const normalized = serverBins.map((s, index) => normalizeBin(s, index));
 
     setLiveBins(normalized);
-  }, []);
+  }, [normalizeBin]);
+
+  const fetchAssignedRoute = useCallback(async () => {
+    const res = await driverApiService.getAssignedRoute({
+      driverId: driverProfile.id,
+      email: driverProfile.email,
+    });
+
+    if (!res?.ok) {
+      setAssignedRouteBins([]);
+      setRouteError("");
+      return;
+    }
+
+    const payload = res?.data;
+    const routeBins = Array.isArray(payload?.route?.bins)
+      ? payload.route.bins
+      : Array.isArray(payload?.assignedRoute?.bins)
+      ? payload.assignedRoute.bins
+      : Array.isArray(payload?.bins)
+      ? payload.bins
+      : Array.isArray(payload?.data?.bins)
+      ? payload.data.bins
+      : [];
+
+    const normalizedRoute = routeBins
+      .map((item, index) => {
+        if (typeof item === "string") {
+          const found = liveBins.find((bin) => String(bin.id) === item);
+          return found || { id: item, fill: 0, lat: 20.2961, lng: 85.8245, pickedUp: false, updatedAt: Date.now() };
+        }
+        return normalizeBin(item, index);
+      })
+      .filter(Boolean);
+
+    setAssignedRouteBins(normalizedRoute);
+    setRouteError("");
+  }, [driverProfile.email, driverProfile.id, liveBins, normalizeBin]);
 
   useEffect(() => {
     let mounted = true;
     const safeFetch = async () => {
       if (!mounted) return;
       await fetchBinsData();
+      if (!mounted) return;
+      await fetchAssignedRoute();
     };
 
     safeFetch();
@@ -74,7 +141,7 @@ const DriverDashboard = () => {
       clearInterval(interval);
       clearInterval(timer);
     };
-  }, [fetchBinsData]);
+  }, [fetchAssignedRoute, fetchBinsData]);
 
   useEffect(() => {
     const onResize = () => {
@@ -96,32 +163,22 @@ const DriverDashboard = () => {
         return;
       }
 
-      const res = await userApi.getCurrent();
-      if (!mounted) return;
-
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          localStorage.removeItem("smartbin-role");
-          localStorage.removeItem("smartbin-user-name");
-          localStorage.removeItem("auth-token");
-          localStorage.removeItem("smartbin-email");
-          navigate("/");
-        }
-        return;
-      }
-
-      const u = res.data?.user || res.data?.data?.user || res.data?.data || res.data;
-      const normalizedRole = String(u?.role || localStorage.getItem("smartbin-role") || "").toLowerCase();
+      const normalizedRole = String(localStorage.getItem("smartbin-role") || "").toLowerCase();
       if (normalizedRole && normalizedRole !== "driver") {
         localStorage.setItem("smartbin-role", normalizedRole);
         navigate("/dashboard/admin");
         return;
       }
 
-      if (u?.name) {
-        setUserName(u.name);
-        localStorage.setItem("smartbin-user-name", u.name);
+      if (!mounted) return;
+
+      const storedName = localStorage.getItem("smartbin-user-name");
+      const storedEmail = localStorage.getItem("smartbin-email");
+      const storedId = localStorage.getItem("smartbin-driver-id");
+      if (storedName) {
+        setUserName(storedName);
       }
+      setDriverProfile({ id: storedId || "", email: storedEmail || "" });
     })();
 
     return () => {
@@ -129,8 +186,21 @@ const DriverDashboard = () => {
     };
   }, [navigate]);
 
-  const handlePickup = (binId) => {
+  const handlePickup = async (binId) => {
+    await driverApiService.markCollected({
+      binId,
+      driverId: driverProfile.id,
+      driverEmail: driverProfile.email,
+      collectedAt: new Date().toISOString(),
+    });
+
     setLiveBins((prevBins) =>
+      prevBins.map((bin) =>
+        bin.id === binId ? { ...bin, pickedUp: true, fill: 0, updatedAt: Date.now() } : bin
+      )
+    );
+
+    setAssignedRouteBins((prevBins) =>
       prevBins.map((bin) =>
         bin.id === binId ? { ...bin, pickedUp: true, fill: 0, updatedAt: Date.now() } : bin
       )
@@ -143,6 +213,7 @@ const DriverDashboard = () => {
     localStorage.removeItem("smartbin-user-name");
     localStorage.removeItem("auth-token");
     localStorage.removeItem("smartbin-email");
+    localStorage.removeItem("smartbin-driver-id");
     navigate("/");
   };
 
@@ -199,6 +270,8 @@ const DriverDashboard = () => {
               <div className="h-full bg-(--color-primary)" style={{ width: `${progress}%` }} />
             </div>
           </div>
+
+          {routeError ? <p className="mb-3 text-sm text-red-400">{routeError}</p> : null}
 
           <div className="space-y-2.5">
             {driverStops.map((bin, index) => (
