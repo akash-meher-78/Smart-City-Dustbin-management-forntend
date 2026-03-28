@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authApi } from '../../utils/api';
+import { authApi, driverApi } from '../../utils/api';
 
 const VerifyOtp = ({ setIsVerifying }) => {
     const [otp, setOtp] = useState(new Array(6).fill(""));
@@ -126,6 +126,42 @@ const VerifyOtp = ({ setIsVerifying }) => {
                                 localStorage.setItem('smartbin-role', selectedRole);
                                 localStorage.setItem('smartbin-user-name', userData?.name || pendingPayload?.name || 'User');
                                 if (authToken) localStorage.setItem('auth-token', authToken);
+
+                                if (selectedRole === 'driver') {
+                                    const createdUserId = userData?._id || userData?.id;
+                                    const vehicleNumber = String(pendingPayload?.vehicleNumber || '').trim();
+
+                                    if (!vehicleNumber) {
+                                        setFormMessage('Driver registration requires vehicle number. Please register again.');
+                                        return;
+                                    }
+
+                                    if (createdUserId) {
+                                        const createDriverRes = await driverApi.create({
+                                            userId: createdUserId,
+                                            vehicleNumber,
+                                        });
+
+                                        if (!createDriverRes.ok) {
+                                            const createErr =
+                                                createDriverRes.data?.message ||
+                                                createDriverRes.data?.error ||
+                                                createDriverRes.data?.details ||
+                                                'Driver profile creation failed';
+                                            setFormMessage(`Driver profile setup failed: ${createErr}`);
+                                            return;
+                                        }
+
+                                        const createdDriver =
+                                            createDriverRes.data?.driver ||
+                                            createDriverRes.data?.data?.driver ||
+                                            createDriverRes.data?.data ||
+                                            createDriverRes.data;
+                                        const driverId = createdDriver?._id || createdDriver?.id;
+                                        if (driverId) localStorage.setItem('smartbin-driver-id', driverId);
+                                    }
+                                }
+
                                 localStorage.removeItem('smartbin-pending-registration');
                                 navigate(selectedRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
                             } else {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ShieldCheck, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { authApi } from "../../utils/api";
+import { authApi, driverApi } from "../../utils/api";
 
 const Login = ({ onRegister }) => {
     const navigate = useNavigate();
@@ -52,8 +52,20 @@ const Login = ({ onRegister }) => {
                     localStorage.setItem('smartbin-email', username.trim());
                     localStorage.setItem('smartbin-role', apiRole);
                     localStorage.setItem('smartbin-user-name', userData?.name || username.trim() || (apiRole === 'admin' ? 'Admin' : 'Driver'));
-                    if (userData?._id || userData?.id) {
-                        localStorage.setItem('smartbin-driver-id', userData?._id || userData?.id);
+                    localStorage.removeItem('smartbin-driver-id');
+
+                    if (apiRole === 'driver') {
+                        const resolveRes = await driverApi.resolveDriverIdByUser({
+                            userId: userData?._id || userData?.id,
+                            email: username.trim(),
+                        });
+
+                        if (resolveRes?.ok) {
+                            const resolvedDriverId = resolveRes.data?.driverId;
+                            if (resolvedDriverId) {
+                                localStorage.setItem('smartbin-driver-id', resolvedDriverId);
+                            }
+                        }
                     }
                     if (authToken) localStorage.setItem('auth-token', authToken);
 

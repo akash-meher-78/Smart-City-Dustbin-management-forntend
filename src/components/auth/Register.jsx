@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { ShieldCheck, Truck } from "lucide-react";
-import { authApi } from "../../utils/api";
+import { useNavigate } from "react-router-dom";
+import { authApi, driverApi } from "../../utils/api";
 
 const Register = ({ onLogin, setIsVerifying}) => {
+    const navigate = useNavigate();
     const [role, setRole] = useState('driver');
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [vehicleNumber, setVehicleNumber] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [formMessage, setFormMessage] = useState('');
+    const bypassOtp = String(import.meta.env.VITE_BYPASS_OTP || '').toLowerCase() === 'true';
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -19,6 +23,8 @@ const Register = ({ onLogin, setIsVerifying}) => {
             setEmail(value);
         } else if (name === 'password') {
             setPassword(value);
+        } else if (name === 'vehicleNumber') {
+            setVehicleNumber(value);
         }
     }
 
@@ -40,6 +46,10 @@ const Register = ({ onLogin, setIsVerifying}) => {
             setFormMessage('Password must be at least 6 characters');
             return;
         }
+        if (role === 'driver' && !vehicleNumber.trim()) {
+            setFormMessage('Please enter vehicle number for driver registration');
+            return;
+        }
 
         setFormMessage('');
         
@@ -47,7 +57,66 @@ const Register = ({ onLogin, setIsVerifying}) => {
         (async () => {
             try {
                 setIsLoading(true);
-                const payload = { name, email, password, role };
+                const payload = {
+                    name: name.trim(),
+                    email: email.trim(),
+                    password,
+                    role,
+                    ...(role === 'driver' ? { vehicleNumber: vehicleNumber.trim() } : {}),
+                };
+
+                if (bypassOtp) {
+                    const registerRes = await authApi.register(payload);
+                    if (!registerRes.ok) {
+                        const registerErr = registerRes.data?.message || registerRes.data?.error || registerRes.data?.details || 'Registration failed';
+                        setFormMessage(`Registration failed: ${registerErr}`);
+                        return;
+                    }
+
+                    const userData = registerRes.data?.user || registerRes.data?.data?.user || registerRes.data?.userData || {};
+                    const selectedRole = userData?.role || payload?.role || 'driver';
+                    const authToken =
+                        registerRes.data?.token ||
+                        registerRes.data?.accessToken ||
+                        registerRes.data?.data?.token ||
+                        registerRes.data?.data?.accessToken;
+
+                    localStorage.setItem('smartbin-email', payload.email);
+                    localStorage.setItem('smartbin-role', selectedRole);
+                    localStorage.setItem('smartbin-user-name', userData?.name || payload.name || 'User');
+                    if (authToken) localStorage.setItem('auth-token', authToken);
+
+                    if (selectedRole === 'driver') {
+                        const createdUserId = userData?._id || userData?.id;
+                        if (createdUserId) {
+                            const createDriverRes = await driverApi.create({
+                                userId: createdUserId,
+                                vehicleNumber: payload.vehicleNumber,
+                            });
+
+                            if (!createDriverRes.ok) {
+                                const createErr =
+                                    createDriverRes.data?.message ||
+                                    createDriverRes.data?.error ||
+                                    createDriverRes.data?.details ||
+                                    'Driver profile creation failed';
+                                setFormMessage(`Driver profile setup failed: ${createErr}`);
+                                return;
+                            }
+
+                            const createdDriver =
+                                createDriverRes.data?.driver ||
+                                createDriverRes.data?.data?.driver ||
+                                createDriverRes.data?.data ||
+                                createDriverRes.data;
+                            const driverId = createdDriver?._id || createdDriver?.id;
+                            if (driverId) localStorage.setItem('smartbin-driver-id', driverId);
+                        }
+                    }
+
+                    navigate(selectedRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
+                    return;
+                }
 
                 localStorage.setItem('smartbin-email', email);
                 localStorage.setItem('smartbin-role', role);
@@ -65,6 +134,7 @@ const Register = ({ onLogin, setIsVerifying}) => {
                 setName('');
                 setEmail('');
                 setPassword('');
+                setVehicleNumber('');
             } finally {
                 setIsLoading(false);
             }
@@ -117,23 +187,39 @@ const Register = ({ onLogin, setIsVerifying}) => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4">
-                    {/* Full Name */}
-                    <div>
-                        <label className="block text-(--color-text-muted) text-sm font-medium mb-2 uppercase tracking-wide">
-                            Full Name
-                        </label>
-                        <input
-                            name="name"
-                            type="text"
-                            value={name}
-                            onChange={handleChange}
-                            className="w-full bg-(--color-card) border border-(--color-accent-35) rounded-lg px-4 py-3 text-(--color-text) placeholder:text-(--color-text-soft) focus:outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-25) transition-all"
-                            placeholder="Full Name"
-                        />
+                <div className="space-y-4">
+                    <div className={`grid gap-4 ${role === 'driver' ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+                        <div>
+                            <label className="block text-(--color-text-muted) text-sm font-medium mb-2 uppercase tracking-wide">
+                                Full Name
+                            </label>
+                            <input
+                                name="name"
+                                type="text"
+                                value={name}
+                                onChange={handleChange}
+                                className="w-full bg-(--color-card) border border-(--color-accent-35) rounded-lg px-4 py-3 text-(--color-text) placeholder:text-(--color-text-soft) focus:outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-25) transition-all"
+                                placeholder="Full Name"
+                            />
+                        </div>
+
+                        {role === 'driver' ? (
+                            <div>
+                                <label className="block text-(--color-text-muted) text-sm font-medium mb-2 uppercase tracking-wide">
+                                    Vehicle Number
+                                </label>
+                                <input
+                                    name="vehicleNumber"
+                                    type="text"
+                                    value={vehicleNumber}
+                                    onChange={handleChange}
+                                    className="w-full bg-(--color-card) border border-(--color-accent-35) rounded-lg px-4 py-3 text-(--color-text) placeholder:text-(--color-text-soft) focus:outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-25) transition-all"
+                                    placeholder="OD-02-AB-1234"
+                                />
+                            </div>
+                        ) : null}
                     </div>
 
-                    {/* Email */}
                     <div>
                         <label className="block text-(--color-text-muted) text-sm font-medium mb-2 uppercase tracking-wide">
                             Email

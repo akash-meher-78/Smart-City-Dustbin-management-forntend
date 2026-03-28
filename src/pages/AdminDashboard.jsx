@@ -26,40 +26,39 @@ const parseLocation = (rawLocation) => {
   };
 };
 
-const buildDummyBins = () => [
-  {
-    id: "BIN-DUMMY-001",
-    fill: 92,
-    lat: 20.3001,
-    lng: 85.8224,
-    pickedUp: false,
-    updatedAt: Date.now(),
-  },
-  {
-    id: "BIN-DUMMY-002",
-    fill: 74,
-    lat: 20.2948,
-    lng: 85.8311,
-    pickedUp: false,
-    updatedAt: Date.now(),
-  },
-  {
-    id: "BIN-DUMMY-003",
-    fill: 58,
-    lat: 20.2873,
-    lng: 85.8185,
-    pickedUp: false,
-    updatedAt: Date.now(),
-  },
-  {
-    id: "BIN-DUMMY-004",
-    fill: 36,
-    lat: 20.3056,
-    lng: 85.8362,
-    pickedUp: false,
-    updatedAt: Date.now(),
-  },
-];
+const OBJECT_ID_REGEX = /^[a-fA-F0-9]{24}$/;
+
+const findFirstObjectId = (value, depth = 0) => {
+  if (depth > 4 || value == null) return "";
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return OBJECT_ID_REGEX.test(trimmed) ? trimmed : "";
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstObjectId(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+
+  if (typeof value === "object") {
+    const preferredKeys = ["_id", "id", "binId", "binID", "bin_id"];
+    for (const key of preferredKeys) {
+      const found = findFirstObjectId(value?.[key], depth + 1);
+      if (found) return found;
+    }
+
+    for (const nestedValue of Object.values(value)) {
+      const found = findFirstObjectId(nestedValue, depth + 1);
+      if (found) return found;
+    }
+  }
+
+  return "";
+};
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -71,6 +70,7 @@ const AdminDashboard = () => {
   const [removingDriverId, setRemovingDriverId] = useState("");
   const [driverToRemove, setDriverToRemove] = useState(null);
   const [isAssigningRoute, setIsAssigningRoute] = useState(false);
+  const [isOptimizingRoute, setIsOptimizingRoute] = useState(false);
   const [assignFeedback, setAssignFeedback] = useState(null);
   const [assignedRouteBins, setAssignedRouteBins] = useState([]);
   const [activeSection, setActiveSection] = useState("Dashboard");
@@ -112,23 +112,30 @@ const AdminDashboard = () => {
     const serverBins = Array.isArray(payload?.bins) ? payload.bins : Array.isArray(payload) ? payload : [];
 
     if (!res.ok) {
-      setLiveBins(buildDummyBins());
+      setLiveBins([]);
       return;
     }
 
     const normalized = serverBins.map((s, index) => {
       const parsedLocation = parseLocation(s.location);
       const fillValue = Number(s.fill?.value ?? s.fill ?? 0);
+      const mongoId = findFirstObjectId(s) || null;
+      const displayId = String(s.binNumber || s.binId || s.id || `BIN-${index + 1}`).trim();
+      const deleteId = String(s.binNumber || s.binId || s.id || s._id || displayId).trim();
       return {
-        id: s.binId || s.id || `BIN-${index + 1}`,
+        _id: mongoId,
+        id: displayId,
+        binNumber: displayId,
+        deleteId,
         fill: Number.isFinite(fillValue) ? fillValue : 0,
         lat: Number(s.lat ?? s.location?.lat ?? parsedLocation.lat ?? 20.2961),
         lng: Number(s.lng ?? s.location?.lng ?? parsedLocation.lng ?? 85.8245),
         pickedUp: false,
         updatedAt: s.lastUpdated || s.updatedAt || Date.now(),
+        raw: s,
       };
     });
-    setLiveBins(normalized.length ? normalized : buildDummyBins());
+    setLiveBins(normalized.length ? normalized : []);
   }, []);
 
   const fetchDriversData = useCallback(async () => {
@@ -136,32 +143,78 @@ const AdminDashboard = () => {
     setDriversError("");
 
     try {
-      const res = await adminApi.getAllDrivers();
-      if (!res.ok) {
-        const message = res?.data?.message || res?.data?.error || "Failed to fetch drivers";
+      const [driversRes, usersRes] = await Promise.all([adminApi.getAllDrivers(), adminApi.getAllUsers()]);
+
+      if (!driversRes.ok) {
+        const message = driversRes?.data?.message || driversRes?.data?.error || "Failed to fetch drivers";
         setDrivers([]);
         setDriversError(message);
         return;
       }
 
-      const payload = res.data;
-      const serverDrivers = Array.isArray(payload?.drivers)
-        ? payload.drivers
-        : Array.isArray(payload?.data?.drivers)
-        ? payload.data.drivers
-        : Array.isArray(payload)
-        ? payload
+      const driversPayload = driversRes.data;
+      const serverDrivers = Array.isArray(driversPayload?.drivers)
+        ? driversPayload.drivers
+        : Array.isArray(driversPayload?.data?.drivers)
+        ? driversPayload.data.drivers
+        : Array.isArray(driversPayload)
+        ? driversPayload
         : [];
 
+      const usersPayload = usersRes?.data;
+      const serverUsers = Array.isArray(usersPayload?.users)
+        ? usersPayload.users
+        : Array.isArray(usersPayload?.data?.users)
+        ? usersPayload.data.users
+        : Array.isArray(usersPayload?.data)
+        ? usersPayload.data
+        : Array.isArray(usersPayload)
+        ? usersPayload
+        : [];
+
+      const usersById = new Map(
+        serverUsers
+          .map((user) => {
+            const userId = String(user?._id || user?.id || "").trim();
+            return userId ? [userId, user] : null;
+          })
+          .filter(Boolean)
+      );
+
       const normalized = serverDrivers
-        .filter((driver) => String(driver?.role || "").toLowerCase() === "driver")
-        .map((driver) => ({
-          id: driver._id || driver.id || "",
-          name: driver.name || "Unnamed driver",
-          email: driver.email || "-",
-          role: driver.role || "driver",
-          createdAt: driver.createdAt || null,
-        }));
+        .filter((driver) => {
+          const topRole = String(driver?.role || "").toLowerCase();
+          const userRole = String(driver?.user?.role || "").toLowerCase();
+          return topRole === "driver" || userRole === "driver" || Boolean(driver?.user);
+        })
+        .map((driver) => {
+          const rawUser = driver?.user;
+          const linkedUserId =
+            typeof rawUser === "object"
+              ? String(rawUser?._id || rawUser?.id || "").trim()
+              : String(rawUser || "").trim();
+          const linkedUser = usersById.get(linkedUserId) || null;
+
+          const derivedName =
+            driver?.name ||
+            (typeof rawUser === "object" ? rawUser?.name : "") ||
+            linkedUser?.name ||
+            (linkedUserId ? `Driver ${linkedUserId.slice(-4).toUpperCase()}` : "Unnamed driver");
+          const derivedEmail =
+            driver?.email ||
+            (typeof rawUser === "object" ? rawUser?.email : "") ||
+            linkedUser?.email ||
+            "-";
+
+          return {
+            id: driver._id || driver.id || "",
+            name: derivedName,
+            email: derivedEmail,
+            role: driver.role || (typeof rawUser === "object" ? rawUser?.role : "") || linkedUser?.role || "driver",
+            vehicleNumber: driver.vehicleNumber || "-",
+            createdAt: driver.createdAt || null,
+          };
+        });
 
       setDrivers(normalized);
     } catch (error) {
@@ -249,16 +302,106 @@ const AdminDashboard = () => {
 
   const handleGetBinById = async (binId) => adminApi.getBinById(binId);
 
+  const extractRouteBinIds = useCallback((payload) => {
+    const route = payload?.data || payload?.route || payload?.assignedRoute || payload;
+    const routeBins = Array.isArray(route?.bins)
+      ? route.bins
+      : Array.isArray(payload?.bins)
+      ? payload.bins
+      : Array.isArray(payload?.data?.bins)
+      ? payload.data.bins
+      : [];
+
+    return routeBins
+      .map((bin) => {
+        if (typeof bin === "string") return bin;
+        if (typeof bin === "object" && bin) return bin.binId || bin.id || bin._id || "";
+        return "";
+      })
+      .filter(Boolean);
+  }, []);
+
+  const mapBinIdsToLiveBins = useCallback(
+    (binIds) => {
+      const mapped = binIds
+        .map((binId) => liveBins.find((bin) => String(bin.id) === String(binId)))
+        .filter(Boolean);
+      return mapped;
+    },
+    [liveBins]
+  );
+
   const handleAssignRoute = async ({ driver, bins, binIds }) => {
     setAssignFeedback(null);
     setIsAssigningRoute(true);
 
     try {
+      const objectIdRegex = OBJECT_ID_REGEX;
+
+      const selectedKeys = bins
+        .map((bin) => [
+          String(bin?._id || "").trim(),
+          String(bin?.id || "").trim(),
+          String(bin?.binId || "").trim(),
+          String(bin?.binNumber || "").trim(),
+          findFirstObjectId(bin?.raw || {}),
+        ])
+        .flat()
+        .filter(Boolean);
+
+      const resolvedFromSelection = bins
+        .map((bin) => String(bin?._id || findFirstObjectId(bin?.raw || {}) || "").trim())
+        .filter((id) => objectIdRegex.test(id));
+
+      let binObjectIds = Array.from(new Set(resolvedFromSelection));
+
+      // If list response didn't include _id for all selected bins, resolve from a single bulk fetch.
+      if (binObjectIds.length < bins.length) {
+        const allBinsRes = await adminApi.getAllBins();
+        const payload = allBinsRes?.data;
+        const serverBins = Array.isArray(payload?.bins)
+          ? payload.bins
+          : Array.isArray(payload?.data?.bins)
+          ? payload.data.bins
+          : Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload)
+          ? payload
+          : [];
+
+        const byAnyKey = new Map();
+        for (const item of serverBins) {
+          const mongoId = String(findFirstObjectId(item) || "").trim();
+          if (!objectIdRegex.test(mongoId)) continue;
+
+          const keys = [
+            String(item?._id || "").trim(),
+            String(item?.id || "").trim(),
+            String(item?.binId || "").trim(),
+            String(item?.binNumber || "").trim(),
+            String(findFirstObjectId(item) || "").trim(),
+          ].filter(Boolean);
+
+          keys.forEach((key) => {
+            if (!byAnyKey.has(key)) byAnyKey.set(key, mongoId);
+          });
+        }
+
+        const resolvedFromAll = selectedKeys.map((key) => byAnyKey.get(key)).filter(Boolean);
+        binObjectIds = Array.from(new Set([...binObjectIds, ...resolvedFromAll]));
+      }
+
+      if (!binObjectIds.length) {
+        setAssignFeedback({
+          type: "error",
+          message: "Route assignment failed: Could not resolve selected bins to database ids.",
+        });
+        return;
+      }
+
       const payload = {
         driverId: driver.id,
-        driverName: driver.name,
-        driverEmail: driver.email,
-        binIds,
+        bins: binObjectIds,
       };
 
       const res = await adminApi.assignRoute(payload);
@@ -272,13 +415,49 @@ const AdminDashboard = () => {
         return;
       }
 
-      setAssignedRouteBins(bins);
+      const responseBinIds = extractRouteBinIds(res?.data);
+      const mappedBins = responseBinIds.length ? mapBinIdsToLiveBins(responseBinIds) : bins;
+      setAssignedRouteBins(mappedBins.length ? mappedBins : bins);
       setAssignFeedback({
         type: "success",
         message: `Route assigned to ${driver.name} (${driver.email}) with ${binIds.length} bin(s).`,
       });
     } finally {
       setIsAssigningRoute(false);
+    }
+  };
+
+  const handleOptimizeRoute = async ({ driver, lng, lat }) => {
+    setAssignFeedback(null);
+    setIsOptimizingRoute(true);
+
+    try {
+      const res = await adminApi.optimizeRoute({
+        driverId: driver.id,
+        lng,
+        lat,
+      });
+
+      if (!res?.ok) {
+        const message =
+          res?.data?.message ||
+          res?.data?.error ||
+          res?.data?.details ||
+          "Failed to optimize route";
+        setAssignFeedback({ type: "error", message: `Route optimization failed: ${message}` });
+        return;
+      }
+
+      const optimizedBinIds = extractRouteBinIds(res?.data);
+      const mappedBins = mapBinIdsToLiveBins(optimizedBinIds);
+
+      setAssignedRouteBins(mappedBins);
+      setAssignFeedback({
+        type: "success",
+        message: `Optimized route generated for ${driver.name} with ${optimizedBinIds.length} bin(s).`,
+      });
+    } finally {
+      setIsOptimizingRoute(false);
     }
   };
 
@@ -359,7 +538,9 @@ const AdminDashboard = () => {
             drivers={drivers}
             bins={sortedByPriority}
             isAssigning={isAssigningRoute}
+            isOptimizing={isOptimizingRoute}
             onAssignRoute={handleAssignRoute}
+            onOptimizeRoute={handleOptimizeRoute}
             assignFeedback={assignFeedback}
           />
           <div className="mt-4 h-105 overflow-hidden rounded-xl border border-(--color-accent-25)">
@@ -412,6 +593,7 @@ const AdminDashboard = () => {
                   <p className="font-semibold text-(--color-text)">{driver.name}</p>
                   <p className="text-sm text-(--color-text-muted)">{driver.email}</p>
                   <p className="mt-1 text-xs uppercase tracking-wider text-(--color-text-soft)">{driver.role}</p>
+                  <p className="mt-1 text-xs text-(--color-text-soft)">Vehicle {driver.vehicleNumber || "-"}</p>
                   {driver.createdAt ? (
                     <p className="mt-1 text-xs text-(--color-text-soft)">
                       Joined {new Date(driver.createdAt).toLocaleDateString()}

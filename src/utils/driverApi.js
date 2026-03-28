@@ -6,7 +6,12 @@ export const driverApiService = {
   getAllBins: () => binApi.getAll(),
   getBinFillLevels: () => binApi.getFillLevels(),
   getBinById: (binId) => binApi.getById(binId),
+  getAllRoutes: () => routeApi.getAllRoutes(),
+  getRouteByDriver: (driverId) => routeApi.getRouteByDriver(driverId),
+  getRouteById: (routeId) => routeApi.getRouteById(routeId),
   getAssignedRoute: ({ driverId, email } = {}) => routeApi.getAssignedRoute({ driverId, email }),
+  optimizeRoute: ({ driverId, lng, lat }) => routeApi.optimizeRoute({ driverId, lng, lat }),
+  deleteRoute: (routeId) => routeApi.deleteRoute(routeId),
   markCollected: (payload) => routeApi.markCollected(payload),
 };
 

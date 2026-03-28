@@ -1,6 +1,24 @@
 import { useState } from "react";
+import { useToast, ToastContainer } from "../ui/Toast";
+
+const resolveBinIdentifier = (bin) =>
+  String(bin?.binNumber || bin?.binId || bin?.id || bin?._id || "").trim();
+
+const resolveDeleteIdentifier = (bin) =>
+  String(bin?.deleteId || bin?._id || bin?.binNumber || bin?.binId || bin?.id || "").trim();
+
+const resolveDeleteCandidates = (bin) => {
+  const candidates = [bin?.deleteId, bin?._id, bin?.binNumber, bin?.binId, bin?.id]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  return [...new Set(candidates)];
+};
+
+const resolveBinLabel = (bin) =>
+  String(bin?.binNumber || bin?.binId || bin?.id || bin?._id || "Unknown bin").trim();
 
 const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh }) => {
+  const { toasts, removeToast, success, error, info } = useToast();
   const [binId, setBinId] = useState("");
   const [lookupBinId, setLookupBinId] = useState("");
   const [lookupResult, setLookupResult] = useState(null);
@@ -8,8 +26,7 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
   const [lat, setLat] = useState(20.2961);
   const [lng, setLng] = useState(85.8245);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("error");
+  const [deletingId, setDeletingId] = useState(null);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -17,8 +34,7 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
 
     const cleanBinId = String(binId || "").trim();
     if (!cleanBinId) {
-      setMessageType("error");
-      setMessage("Bin ID is required");
+      error("Bin ID is required", "Create Failed");
       return;
     }
 
@@ -26,8 +42,7 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
     try {
       const existing = await onGetBinById(cleanBinId);
       if (existing?.ok && existing?.data) {
-        setMessageType("error");
-        setMessage(`Bin ID ${cleanBinId} already exists`);
+        error(`Bin ID ${cleanBinId} already exists`, "Duplicate Bin");
         return;
       }
 
@@ -36,20 +51,17 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
       const heightNum = Number(binHeight);
 
       if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
-        setMessageType("error");
-        setMessage("Latitude and longitude must be valid numbers");
+        error("Latitude and longitude must be valid numbers", "Invalid Location");
         return;
       }
 
       if (!Number.isFinite(heightNum) || heightNum <= 0) {
-        setMessageType("error");
-        setMessage("Bin height must be greater than 0");
+        error("Bin height must be greater than 0", "Invalid Height");
         return;
       }
 
       const payload = {
-        binId: cleanBinId,
-        // Backend schema requires location as a string.
+        binNumber: cleanBinId,
         location: `${latNum},${lngNum}`,
         binHeight: heightNum,
         lat: latNum,
@@ -59,56 +71,79 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
       const res = await onCreateBin(payload);
       if (!res?.ok) {
         const errorMsg = res?.data?.message || res?.data?.error || res?.data?.details || "Failed to create dustbin";
-        setMessageType("error");
-        setMessage(`Create failed: ${errorMsg}`);
+        error(errorMsg, "Create Failed");
         return;
       }
 
       setBinId("");
-      setMessageType("success");
-      setMessage("Dustbin created successfully");
+      success(`Bin ${cleanBinId} created successfully`, "Create Complete");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (targetBinId) => {
-    const res = await onDeleteBin(targetBinId);
-    if (!res?.ok) {
-      const errorMsg = res?.data?.message || res?.data?.error || res?.data?.details || "Failed to delete dustbin";
-      setMessageType("error");
-      setMessage(`Delete failed: ${errorMsg}`);
+  const handleDelete = async (bin) => {
+    const deleteCandidates = resolveDeleteCandidates(bin);
+    const primaryDeleteId = deleteCandidates[0] || "";
+
+    if (!primaryDeleteId) {
+      error("Invalid bin ID", "Delete Failed");
       return;
     }
 
-    setMessageType("success");
-    setMessage("Dustbin deleted successfully");
+    setDeletingId(primaryDeleteId);
+
+    try {
+      const res = await onDeleteBin({ candidates: deleteCandidates, binId: primaryDeleteId });
+
+      if (!res?.ok) {
+        const errorMsg =
+          res?.data?.message ||
+          res?.data?.error ||
+          res?.data?.details ||
+          `Server returned status ${res?.status}`;
+        error(errorMsg, "Delete Failed");
+        setDeletingId(null);
+        return;
+      }
+
+      success(`Bin ${resolveBinLabel(bin)} deleted successfully`, "Success");
+
+      setTimeout(() => {
+        setDeletingId(null);
+        onRefresh();
+      }, 500);
+    } catch (err) {
+      error(err?.message || "Network error during delete", "Delete Failed");
+      setDeletingId(null);
+    }
   };
 
   const handleLookup = async () => {
     const targetBinId = String(lookupBinId || "").trim();
     if (!targetBinId) {
-      setMessageType("error");
-      setMessage("Enter Bin ID to fetch");
+      error("Enter Bin ID to fetch", "Lookup Failed");
       return;
     }
 
+    info(`Fetching bin ${targetBinId}...`, "Loading");
     const res = await onGetBinById(targetBinId);
     if (!res?.ok) {
       const errorMsg = res?.data?.message || res?.data?.error || res?.data?.details || "Failed to fetch dustbin";
-      setMessageType("error");
-      setMessage(`Fetch failed: ${errorMsg}`);
+      error(errorMsg, "Fetch Failed");
       setLookupResult(null);
       return;
     }
 
     const rawBin = res?.data?.bin || res?.data?.data?.bin || res?.data?.data || res?.data;
     setLookupResult(rawBin || null);
-    setMessage("");
+    success(`Bin ${targetBinId} found`, "Lookup Complete");
   };
 
   return (
-    <div className="space-y-4">
+    <>
+      <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
+      <div className="space-y-4">
       <div className="grid md:grid-cols-4 gap-3 rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">
         <input
           type="text"
@@ -192,27 +227,55 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
         </div>
       </form>
 
-      {message ? (
-        <p className={`text-sm font-medium ${messageType === "error" ? "text-red-400" : "text-green-400"}`}>{message}</p>
-      ) : null}
-
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
         {bins.map((bin) => (
-          <div key={bin.id} className="rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">
-            <p className="font-semibold text-(--color-text)">{bin.id}</p>
+          <div key={resolveBinIdentifier(bin) || resolveBinLabel(bin)} className="rounded-lg border border-(--color-accent-20) bg-(--color-surface) p-3">
+            <p className="font-semibold text-(--color-text)">{resolveBinLabel(bin)}</p>
             <p className="text-sm text-(--color-text-muted)">Fill Level: {bin.fill}%</p>
             <p className="text-xs text-(--color-text-soft)">Updated {new Date(bin.updatedAt).toLocaleTimeString()}</p>
             <button
               type="button"
-              onClick={() => handleDelete(bin.id)}
-              className="mt-3 rounded-md border border-red-400/60 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300"
+              onClick={() => handleDelete(bin)}
+              disabled={deletingId === resolveDeleteIdentifier(bin)}
+              className={`mt-3 rounded-md border px-3 py-1.5 text-xs font-semibold transition-all ${
+                deletingId === resolveDeleteIdentifier(bin)
+                  ? "border-red-600/80 bg-red-600/20 text-red-400 cursor-not-allowed"
+                  : "border-red-400/60 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+              }`}
             >
-              Delete
+              {deletingId === resolveDeleteIdentifier(bin) ? (
+                <span className="flex items-center gap-2">
+                  <svg
+                    className="w-3 h-3 animate-spin"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Deleting...
+                </span>
+              ) : (
+                "Delete"
+              )}
             </button>
           </div>
         ))}
       </div>
     </div>
+    </>
   );
 };
 

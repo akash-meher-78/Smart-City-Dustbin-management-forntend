@@ -14,6 +14,12 @@ export const adminApi = {
   getDriverById: (driverId) => driverApi.getById(driverId),
   deleteDriverById: (driverId) => driverApi.deleteById(driverId),
   assignRoute: (payload) => routeApi.assignRoute(payload),
+  createRoute: (payload) => routeApi.createRoute(payload),
+  getAllRoutes: () => routeApi.getAllRoutes(),
+  getRouteByDriver: (driverId) => routeApi.getRouteByDriver(driverId),
+  getRouteById: (routeId) => routeApi.getRouteById(routeId),
+  optimizeRoute: ({ driverId, lng, lat }) => routeApi.optimizeRoute({ driverId, lng, lat }),
+  deleteRoute: (routeId) => routeApi.deleteRoute(routeId),
   getAssignedRoute: ({ driverId, email } = {}) => routeApi.getAssignedRoute({ driverId, email }),
 };
 

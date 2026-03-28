@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 
-const RouteAssignmentPanel = ({ drivers, bins, isAssigning, onAssignRoute, assignFeedback }) => {
+const RouteAssignmentPanel = ({
+  drivers,
+  bins,
+  isAssigning,
+  onAssignRoute,
+  assignFeedback,
+}) => {
   const [driverQuery, setDriverQuery] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState("");
   const [selectedBinIds, setSelectedBinIds] = useState([]);
@@ -21,6 +27,7 @@ const RouteAssignmentPanel = ({ drivers, bins, isAssigning, onAssignRoute, assig
   );
 
   const sortedBins = useMemo(() => [...bins].sort((a, b) => b.fill - a.fill), [bins]);
+
 
   const toggleBin = (binId) => {
     setSelectedBinIds((prev) =>
@@ -63,15 +70,20 @@ const RouteAssignmentPanel = ({ drivers, bins, isAssigning, onAssignRoute, assig
           <select
             value={selectedDriverId}
             onChange={(e) => setSelectedDriverId(e.target.value)}
+            disabled={drivers.length === 0}
             className="w-full rounded-md border border-(--color-accent-35) bg-(--color-card) px-3 py-2 text-(--color-text)"
           >
-            <option value="">Select driver</option>
+            <option value="">{drivers.length === 0 ? "No driver registered yet" : "Select driver"}</option>
             {filteredDrivers.map((driver) => (
               <option key={driver.id || driver.email} value={driver.id}>
                 {driver.name} ({driver.email})
               </option>
             ))}
           </select>
+
+          {drivers.length === 0 ? (
+            <p className="text-sm font-medium text-(--color-text-muted)">No driver registered yet.</p>
+          ) : null}
 
           {selectedDriver ? (
             <div className="rounded-md border border-(--color-accent-20) bg-(--color-card) p-3">
@@ -129,6 +141,7 @@ const RouteAssignmentPanel = ({ drivers, bins, isAssigning, onAssignRoute, assig
         <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
           {sortedBins.map((bin) => {
             const checked = selectedBinIds.includes(bin.id);
+            const hasLocation = bin.lng !== undefined && bin.lat !== undefined;
             return (
               <label
                 key={bin.id}
@@ -137,6 +150,11 @@ const RouteAssignmentPanel = ({ drivers, bins, isAssigning, onAssignRoute, assig
                 <span>
                   <span className="block font-semibold text-(--color-text)">{bin.id}</span>
                   <span className="block text-xs text-(--color-text-muted)">Fill Level {bin.fill}%</span>
+                  {hasLocation ? (
+                    <span className="block text-xs text-(--color-text-soft)">
+                      Lng: {Number(bin.lng).toFixed(4)}, Lat: {Number(bin.lat).toFixed(4)}
+                    </span>
+                  ) : null}
                 </span>
                 <input type="checkbox" checked={checked} onChange={() => toggleBin(bin.id)} />
               </label>

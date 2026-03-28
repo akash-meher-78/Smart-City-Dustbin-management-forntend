@@ -5,6 +5,7 @@ const RAW_BASE =
 
 const BASE = RAW_BASE.replace(/\/$/, "");
 const BIN_CACHE_KEY = "smartbin-known-bin-ids";
+const BIN_LIST_ENDPOINT_STATUS_KEY = "smartbin-bin-list-endpoint-status";
 
 function getStoredToken() {
   if (typeof window === "undefined") return "";
@@ -32,31 +33,75 @@ export const API_ENDPOINTS = {
   },
   user: {
     all: "/api/users",
-    current: "/api/user/current",
-    update: "/api/user/update",
-    deleteCurrent: "/api/user/delete",
+    current: "/api/users/current",
+    update: "/api/users",
+    deleteCurrent: "/api/users",
   },
   driver: {
     all: "/api/drivers",
-    byId: (driverId) => `/api/driver/${encodeURIComponent(driverId)}`,
-    deleteById: (driverId) => `/api/driver/${encodeURIComponent(driverId)}`,
+    create: "/api/drivers",
+    byId: (driverId) => `/api/drivers/${encodeURIComponent(driverId)}`,
+    deleteById: (driverId) => `/api/drivers/${encodeURIComponent(driverId)}`,
+    updateStatus: (driverId) => `/api/drivers/${encodeURIComponent(driverId)}/status`,
+  },
+  driverLocation: {
+    upsert: "/api/driver",
+    latestByDriverId: (driverId) => `/api/driver/${encodeURIComponent(driverId)}/location`,
+    historyByDriverId: (driverId) => `/api/driver/${encodeURIComponent(driverId)}/location/history`,
+    nearby: (lng, lat, distance = 5000) =>
+      `/api/driver/nearby/location?lng=${encodeURIComponent(lng)}&lat=${encodeURIComponent(lat)}&distance=${encodeURIComponent(distance)}`,
+    logsByDriverId: (driverId) => `/api/driver/${encodeURIComponent(driverId)}/location/logs`,
   },
   route: {
-    assign: "/api/route/assign",
-    assignedByDriverId: (driverId) => `/api/route/driver/${encodeURIComponent(driverId)}`,
-    assignedByEmail: (email) => `/api/route/driver?email=${encodeURIComponent(email)}`,
+    all: "/api/routes",
+    create: "/api/routes",
+    byDriverId: (driverId) => `/api/routes/drivers/${encodeURIComponent(driverId)}`,
+    byId: (routeId) => `/api/routes/${encodeURIComponent(routeId)}`,
+    optimize: (driverId, lng, lat) =>
+      `/api/routes/${encodeURIComponent(driverId)}/optimize?lng=${encodeURIComponent(lng)}&lat=${encodeURIComponent(lat)}`,
     markCollected: "/api/route/collect",
   },
   bin: {
-    all: "/api/bin/all",
-    fillLevels: "/api/bin/fill-level",
-    create: "/api/bin/create",
-    byId: (binId) => `/api/bin/${encodeURIComponent(binId)}`,
-    deleteWithBody: "/api/bin/delete",
-    deleteById: (binId) => `/api/bin/${encodeURIComponent(binId)}`,
-    deleteByIdAlt: (binId) => `/api/bin/delete/${encodeURIComponent(binId)}`,
+    all: "/api/bins",
+    fillLevels: "/api/bins",
+    create: "/api/bins",
+    byId: (binId) => `/api/bins/${encodeURIComponent(binId)}`,
+    deleteById: (binId) => `/api/bins/${encodeURIComponent(binId)}`,
+  },
+  pickup: {
+    all: "/api/pickups",
+    create: "/api/pickups",
+    byId: (pickupId) => `/api/pickups/${encodeURIComponent(pickupId)}`,
+    byDriverId: (driverId) => `/api/pickups/driver/${encodeURIComponent(driverId)}`,
+    accept: (pickupId) => `/api/pickups/${encodeURIComponent(pickupId)}/accept`,
+    complete: (pickupId) => `/api/pickups/${encodeURIComponent(pickupId)}/complete`,
+    deleteById: (pickupId) => `/api/pickups/${encodeURIComponent(pickupId)}`,
+  },
+  alert: {
+    all: "/api/alerts",
+    byId: (id) => `/api/alerts/${encodeURIComponent(id)}`,
+    byBinId: (binId) => `/api/alerts/bins/${encodeURIComponent(binId)}`,
+    resolve: (id) => `/api/alerts/${encodeURIComponent(id)}/resolve`,
+    deleteById: (id) => `/api/alerts/${encodeURIComponent(id)}`,
   },
 };
+
+function parseDriverCollection(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.drivers)) return data.drivers;
+  if (Array.isArray(data?.data?.drivers)) return data.data.drivers;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+function matchDriverByUser(driver, { userId, email } = {}) {
+  const driverUser = driver?.user || {};
+  const driverUserId = String(driverUser?._id || driverUser?.id || "").trim();
+  const driverEmail = String(driverUser?.email || driver?.email || "").trim().toLowerCase();
+  if (userId && driverUserId && String(userId) === driverUserId) return true;
+  if (email && driverEmail && String(email).trim().toLowerCase() === driverEmail) return true;
+  return false;
+}
 
 function readKnownBinIds() {
   if (typeof window === "undefined") return [];
@@ -97,7 +142,33 @@ function extractBins(data) {
 
 function rememberBinsFromResponseData(data) {
   const bins = extractBins(data);
-  bins.forEach((bin) => rememberBinId(bin?.binId || bin?.id));
+  bins.forEach((bin) => rememberBinId(bin?.binNumber || bin?.binId || bin?.id));
+}
+
+function readBinListEndpointStatus() {
+  if (typeof window === "undefined") return "unknown";
+  const value = localStorage.getItem(BIN_LIST_ENDPOINT_STATUS_KEY);
+  return value === "supported" || value === "unsupported" ? value : "unknown";
+}
+
+function writeBinListEndpointStatus(status) {
+  if (typeof window === "undefined") return;
+  if (!["supported", "unsupported"].includes(status)) return;
+  localStorage.setItem(BIN_LIST_ENDPOINT_STATUS_KEY, status);
+}
+
+function getDeleteIdCandidates(input) {
+  if (Array.isArray(input)) {
+    return [...new Set(input.map((id) => String(id || "").trim()).filter(Boolean))];
+  }
+
+  if (input && typeof input === "object") {
+    const raw = Array.isArray(input.candidates) ? input.candidates : [input.binId, input.id, input._id, input.binNumber, input.deleteId];
+    return [...new Set(raw.map((id) => String(id || "").trim()).filter(Boolean))];
+  }
+
+  const id = String(input || "").trim();
+  return id ? [id] : [];
 }
 
 export async function apiFetch(path, options = {}) {
@@ -159,13 +230,19 @@ export const userApi = {
 
 export const binApi = {
   getAll: async () => {
-    const listCandidates = [API_ENDPOINTS.bin.all, "/api/bins", "/api/bin"];
+    const listEndpointStatus = readBinListEndpointStatus();
 
-    for (const path of listCandidates) {
-      const res = await apiFetch(path);
-      if (!res.ok) continue;
-      rememberBinsFromResponseData(res.data);
-      return res;
+    if (listEndpointStatus !== "unsupported") {
+      const res = await apiFetch(API_ENDPOINTS.bin.all);
+      if (res.ok) {
+        writeBinListEndpointStatus("supported");
+        rememberBinsFromResponseData(res.data);
+        return res;
+      }
+
+      if ([404, 405].includes(res.status)) {
+        writeBinListEndpointStatus("unsupported");
+      }
     }
 
     const knownIds = readKnownBinIds();
@@ -179,7 +256,7 @@ export const binApi = {
         if (!item.ok) return null;
         const bin = item?.data?.bin || item?.data?.data?.bin || item?.data?.data || item?.data;
         if (!bin) return null;
-        rememberBinId(bin?.binId || bin?.id || binId);
+        rememberBinId(bin?.binNumber || bin?.binId || bin?.id || binId);
         return bin;
       })
     );
@@ -188,26 +265,13 @@ export const binApi = {
     return { ok: true, status: 200, data: { bins } };
   },
   getFillLevels: async () => {
-    const fillCandidates = [
-      API_ENDPOINTS.bin.fillLevels,
-      "/api/bin/fill-levels",
-      "/api/bin/levels",
-      "/api/fill-level",
-      "/api/fill-levels",
-    ];
-
-    for (const path of fillCandidates) {
-      const res = await apiFetch(path);
-      if (res.ok) return res;
-    }
-
     return binApi.getAll();
   },
   create: async (payload) => {
     const res = await apiFetch(API_ENDPOINTS.bin.create, { method: "POST", body: payload });
     if (res.ok) {
       const created = res?.data?.bin || res?.data?.data?.bin || res?.data?.data || res?.data;
-      rememberBinId(created?.binId || created?.id || payload?.binId);
+      rememberBinId(created?.binNumber || created?.binId || created?.id || payload?.binNumber);
     }
     return res;
   },
@@ -215,66 +279,222 @@ export const binApi = {
     const res = await apiFetch(API_ENDPOINTS.bin.byId(binId));
     if (res.ok) {
       const found = res?.data?.bin || res?.data?.data?.bin || res?.data?.data || res?.data;
-      rememberBinId(found?.binId || found?.id || binId);
+      rememberBinId(found?.binNumber || found?.binId || found?.id || binId);
     }
     return res;
   },
   deleteById: async (binId) => {
-    const bodyDelete = await apiFetch(API_ENDPOINTS.bin.deleteWithBody, {
-      method: "DELETE",
-      body: { binId },
-    });
-    if (bodyDelete.ok || (bodyDelete.status !== 404 && bodyDelete.status !== 405)) {
-      if (bodyDelete.ok) forgetBinId(binId);
-      return bodyDelete;
+    const candidates = getDeleteIdCandidates(binId);
+    if (!candidates.length) {
+      return {
+        ok: false,
+        status: 400,
+        data: { message: "Bin ID is required" },
+      };
     }
 
-    const primary = await apiFetch(API_ENDPOINTS.bin.deleteById(binId), { method: "DELETE" });
-    if (primary.ok || primary.status !== 404) {
-      if (primary.ok) forgetBinId(binId);
-      return primary;
+    let lastResponse = null;
+
+    for (const candidate of candidates) {
+      const response = await apiFetch(API_ENDPOINTS.bin.deleteById(candidate), { method: "DELETE" });
+      lastResponse = response;
+
+      if (!response.ok) {
+        if ([404, 405].includes(response.status)) continue;
+        return response;
+      }
+
+      const deletedBin = response?.data?.bin || response?.data?.data?.bin || response?.data?.data || null;
+      if (!deletedBin) {
+        continue;
+      }
+
+      // Remove all variants from local cache because server payload shape is inconsistent.
+      const deletedIds = [
+        candidate,
+        deletedBin?.binNumber,
+        deletedBin?.binId,
+        deletedBin?.id,
+        deletedBin?._id,
+      ]
+        .map((id) => String(id || "").trim())
+        .filter(Boolean);
+
+      deletedIds.forEach((id) => forgetBinId(id));
+      return response;
     }
 
-    const alt = await apiFetch(API_ENDPOINTS.bin.deleteByIdAlt(binId), { method: "DELETE" });
-    if (alt.ok) forgetBinId(binId);
-    return alt;
+    return {
+      ok: false,
+      status: lastResponse?.status || 404,
+      data: {
+        message:
+          lastResponse?.data?.message ||
+          "Bin was not deleted. Please verify the exact Bin ID shown when the bin was created.",
+      },
+    };
   },
 };
 
 export const routeApi = {
-  assignRoute: async (payload) => {
-    const assignCandidates = [
-      API_ENDPOINTS.route.assign,
-      "/api/routes/assign",
-      "/api/driver/assign-route",
-      "/api/driver/route/assign",
-    ];
+  createRoute: async (payload) => {
+    const objectIdRegex = /^[a-fA-F0-9]{24}$/;
 
-    for (const path of assignCandidates) {
-      const res = await apiFetch(path, { method: "POST", body: payload });
+    const rawBins = Array.isArray(payload?.bins)
+      ? payload.bins
+      : Array.isArray(payload?.binIds)
+      ? payload.binIds
+      : [];
+
+    const normalizedBins = rawBins
+      .flat(2)
+      .map((value) => String(value ?? "").trim())
+      .map((value) => {
+        // Recover accidentally stringified array values like "[ 'BIN-1' ]"
+        const match = value.match(/^\[\s*['\"]?([^'\"\]]+)['\"]?\s*\]$/);
+        return match ? match[1] : value;
+      })
+      .filter(Boolean);
+
+    const objectIdBins = Array.from(new Set(normalizedBins.filter((value) => objectIdRegex.test(value))));
+
+    if (!payload?.driverId || !objectIdBins.length) {
+      return {
+        ok: false,
+        status: 400,
+        data: {
+          message: "driverId and bins(ObjectId[]) are required",
+          details: "Selected bins could not be mapped to Mongo ObjectIds.",
+        },
+      };
+    }
+
+    const normalizedPayload = {
+      driverId: payload?.driverId,
+      bins: objectIdBins,
+    };
+
+    const createCandidates = ["/api.routes", API_ENDPOINTS.route.create, "/api/route", "/api/route/create"];
+
+    for (const path of createCandidates) {
+      const res = await apiFetch(path, { method: "POST", body: normalizedPayload });
       if (res.ok || ![404, 405].includes(res.status)) return res;
     }
 
-    return { ok: false, status: 404, data: { message: "Route assignment endpoint not found" } };
+    return { ok: false, status: 404, data: { message: "Route create endpoint not found" } };
+  },
+
+  assignRoute: async (payload) => {
+    return routeApi.createRoute(payload);
+  },
+
+  getAllRoutes: async () => {
+    const candidates = ["/api.routes", API_ENDPOINTS.route.all, "/api/route", "/api/route/all"];
+
+    for (const path of candidates) {
+      const res = await apiFetch(path);
+      if (res.ok || ![404, 405].includes(res.status)) return res;
+    }
+
+    return { ok: false, status: 404, data: { message: "Route list endpoint not found" } };
+  },
+
+  getRouteByDriver: async (driverId) => {
+    if (!driverId) {
+      return { ok: false, status: 400, data: { message: "driverId is required" } };
+    }
+
+    const candidates = [
+      `/api.routes/drivers/${encodeURIComponent(driverId)}`,
+      API_ENDPOINTS.route.byDriverId(driverId),
+      `/api/routes/driver/${encodeURIComponent(driverId)}`,
+      `/api/route/driver/${encodeURIComponent(driverId)}`,
+      `/api/driver/${encodeURIComponent(driverId)}/routes`,
+    ];
+
+    for (const path of candidates) {
+      const res = await apiFetch(path);
+      if (res.ok || ![404, 405].includes(res.status)) return res;
+    }
+
+    return { ok: false, status: 404, data: { message: "Route by driver endpoint not found" } };
+  },
+
+  getRouteById: async (routeId) => {
+    if (!routeId) {
+      return { ok: false, status: 400, data: { message: "routeId is required" } };
+    }
+
+    const candidates = [
+      `/api.routes/${encodeURIComponent(routeId)}`,
+      API_ENDPOINTS.route.byId(routeId),
+      `/api/route/${encodeURIComponent(routeId)}`,
+    ];
+
+    for (const path of candidates) {
+      const res = await apiFetch(path);
+      if (res.ok || ![404, 405].includes(res.status)) return res;
+    }
+
+    return { ok: false, status: 404, data: { message: "Route by id endpoint not found" } };
+  },
+
+  optimizeRoute: async ({ driverId, lng, lat }) => {
+    if (!driverId) {
+      return { ok: false, status: 400, data: { message: "driverId is required" } };
+    }
+
+    const safeLng = Number.isFinite(Number(lng)) ? Number(lng) : 0;
+    const safeLat = Number.isFinite(Number(lat)) ? Number(lat) : 0;
+
+    const candidates = [
+      `/api.routes/${encodeURIComponent(driverId)}/optimize?lng=${encodeURIComponent(safeLng)}&lat=${encodeURIComponent(safeLat)}`,
+      API_ENDPOINTS.route.optimize(driverId, safeLng, safeLat),
+      `/api/route/${encodeURIComponent(driverId)}/optimize?lng=${encodeURIComponent(safeLng)}&lat=${encodeURIComponent(safeLat)}`,
+    ];
+
+    for (const path of candidates) {
+      const res = await apiFetch(path, { method: "POST" });
+      if (res.ok || ![404, 405].includes(res.status)) return res;
+    }
+
+    return { ok: false, status: 404, data: { message: "Optimize route endpoint not found" } };
+  },
+
+  deleteRoute: async (routeId) => {
+    if (!routeId) {
+      return { ok: false, status: 400, data: { message: "routeId is required" } };
+    }
+
+    const candidates = [
+      `/api.routes/${encodeURIComponent(routeId)}`,
+      API_ENDPOINTS.route.byId(routeId),
+      `/api/route/${encodeURIComponent(routeId)}`,
+    ];
+
+    for (const path of candidates) {
+      const res = await apiFetch(path, { method: "DELETE" });
+      if (res.ok || ![404, 405].includes(res.status)) return res;
+    }
+
+    return { ok: false, status: 404, data: { message: "Route delete endpoint not found" } };
   },
 
   getAssignedRoute: async ({ driverId, email } = {}) => {
-    const candidates = [];
     if (driverId) {
-      candidates.push(
-        API_ENDPOINTS.route.assignedByDriverId(driverId),
-        `/api/routes/driver/${encodeURIComponent(driverId)}`,
-        `/api/driver/${encodeURIComponent(driverId)}/routes`
-      );
+      const byDriver = await routeApi.getRouteByDriver(driverId);
+      if (byDriver.ok || ![404, 405].includes(byDriver.status)) return byDriver;
     }
+
+    const candidates = [];
     if (email) {
       candidates.push(
-        API_ENDPOINTS.route.assignedByEmail(email),
+        `/api.routes/driver?email=${encodeURIComponent(email)}`,
         `/api/routes/driver?email=${encodeURIComponent(email)}`,
         `/api/driver/routes?email=${encodeURIComponent(email)}`
       );
     }
-    candidates.push("/api/route/assigned", "/api/routes/assigned");
+    candidates.push("/api.routes/assigned", "/api/route/assigned", "/api/routes/assigned");
 
     for (const path of [...new Set(candidates)]) {
       const res = await apiFetch(path);
@@ -303,7 +523,34 @@ export const routeApi = {
 
 export const driverApi = {
   getAll: () => apiFetch(API_ENDPOINTS.driver.all),
+  create: (payload) => apiFetch(API_ENDPOINTS.driver.create, { method: "POST", body: payload }),
   getById: (driverId) => apiFetch(API_ENDPOINTS.driver.byId(driverId)),
+  updateStatus: (driverId, payload) =>
+    apiFetch(API_ENDPOINTS.driver.updateStatus(driverId), { method: "PATCH", body: payload }),
+  resolveDriverIdByUser: async ({ userId, email } = {}) => {
+    if (!userId && !email) {
+      return { ok: false, status: 400, data: { message: "userId or email is required" } };
+    }
+
+    const allDrivers = await apiFetch(API_ENDPOINTS.driver.all);
+    if (!allDrivers.ok) return allDrivers;
+
+    const list = parseDriverCollection(allDrivers.data);
+    const match = list.find((driver) => matchDriverByUser(driver, { userId, email }));
+
+    if (!match) {
+      return { ok: false, status: 404, data: { message: "Driver profile not found" } };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        driver: match,
+        driverId: match?._id || match?.id,
+      },
+    };
+  },
   deleteById: async (driverId) => {
     const candidates = [
       API_ENDPOINTS.driver.deleteById(driverId),
@@ -326,3 +573,30 @@ export const driverApi = {
 };
 
 export default apiFetch;
+
+export const driverLocationApi = {
+  upsert: (payload) => apiFetch(API_ENDPOINTS.driverLocation.upsert, { method: "POST", body: payload }),
+  getLatest: (driverId) => apiFetch(API_ENDPOINTS.driverLocation.latestByDriverId(driverId)),
+  getHistory: (driverId) => apiFetch(API_ENDPOINTS.driverLocation.historyByDriverId(driverId)),
+  getNearby: ({ lng, lat, distance = 5000 }) =>
+    apiFetch(API_ENDPOINTS.driverLocation.nearby(lng, lat, distance)),
+  deleteLogs: (driverId) => apiFetch(API_ENDPOINTS.driverLocation.logsByDriverId(driverId), { method: "DELETE" }),
+};
+
+export const pickupApi = {
+  create: (payload) => apiFetch(API_ENDPOINTS.pickup.create, { method: "POST", body: payload }),
+  getAll: () => apiFetch(API_ENDPOINTS.pickup.all),
+  getById: (pickupId) => apiFetch(API_ENDPOINTS.pickup.byId(pickupId)),
+  getByDriverId: (driverId) => apiFetch(API_ENDPOINTS.pickup.byDriverId(driverId)),
+  accept: (pickupId, payload) => apiFetch(API_ENDPOINTS.pickup.accept(pickupId), { method: "PATCH", body: payload }),
+  complete: (pickupId) => apiFetch(API_ENDPOINTS.pickup.complete(pickupId), { method: "PATCH" }),
+  deleteById: (pickupId) => apiFetch(API_ENDPOINTS.pickup.deleteById(pickupId), { method: "DELETE" }),
+};
+
+export const alertApi = {
+  getAll: () => apiFetch(API_ENDPOINTS.alert.all),
+  getById: (id) => apiFetch(API_ENDPOINTS.alert.byId(id)),
+  getByBinId: (binId) => apiFetch(API_ENDPOINTS.alert.byBinId(binId)),
+  resolve: (id) => apiFetch(API_ENDPOINTS.alert.resolve(id), { method: "PATCH" }),
+  deleteById: (id) => apiFetch(API_ENDPOINTS.alert.deleteById(id), { method: "DELETE" }),
+};
