@@ -181,11 +181,11 @@ export const useBin = () => {
     }
   }, []);
 
-  const createBin = useCallback(async (location, binHeight, binId) => {
+  const createBin = useCallback(async (location, binHeight, binNumber) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await binApi.create({ location, binHeight, binId });
+      const res = await binApi.create({ location, binHeight, binNumber });
       if (!res.ok) throw new Error(res.data?.message || 'Failed to create bin');
       return res.data;
     } catch (err) {

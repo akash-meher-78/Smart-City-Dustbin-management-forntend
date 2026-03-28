@@ -26,6 +26,7 @@ const DriverDashboard = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [userName, setUserName] = useState(localStorage.getItem("smartbin-user-name") || "Driver");
+  const [vehicleNumber, setVehicleNumber] = useState(localStorage.getItem("smartbin-vehicle-number") || "-");
   const [driverProfile, setDriverProfile] = useState({
     id: localStorage.getItem("smartbin-driver-id") || "",
     email: localStorage.getItem("smartbin-email") || "",
@@ -186,6 +187,84 @@ const DriverDashboard = () => {
     };
   }, [navigate]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const hydrateDriverDetails = async () => {
+      const driverId = String(driverProfile?.id || "").trim();
+      const email = String(driverProfile?.email || "").trim().toLowerCase();
+
+      if (!driverId && !email) return;
+
+      if (driverId) {
+        const profileRes = await driverApiService.getDriverById(driverId);
+        if (mounted && profileRes?.ok) {
+          const driver = profileRes?.data || {};
+          const resolvedName = String(driver?.user?.name || driver?.name || "").trim();
+          const resolvedVehicle = String(driver?.vehicleNumber || "").trim();
+
+          if (resolvedName) {
+            setUserName(resolvedName);
+            localStorage.setItem("smartbin-user-name", resolvedName);
+          }
+          if (resolvedVehicle) {
+            setVehicleNumber(resolvedVehicle);
+            localStorage.setItem("smartbin-vehicle-number", resolvedVehicle);
+          }
+          return;
+        }
+      }
+
+      if (!email) return;
+
+      const allDriversRes = await driverApiService.getAllDrivers();
+      if (!mounted || !allDriversRes?.ok) return;
+
+      const driversPayload = allDriversRes?.data;
+      const allDrivers = Array.isArray(driversPayload?.drivers)
+        ? driversPayload.drivers
+        : Array.isArray(driversPayload?.data?.drivers)
+        ? driversPayload.data.drivers
+        : Array.isArray(driversPayload?.data)
+        ? driversPayload.data
+        : Array.isArray(driversPayload)
+        ? driversPayload
+        : [];
+
+      const matchedDriver = allDrivers.find((driver) => {
+        const candidateEmail = String(driver?.email || driver?.user?.email || "")
+          .trim()
+          .toLowerCase();
+        return candidateEmail && candidateEmail === email;
+      });
+
+      if (!matchedDriver) return;
+
+      const resolvedName = String(matchedDriver?.name || matchedDriver?.user?.name || "").trim();
+      const resolvedVehicle = String(matchedDriver?.vehicleNumber || "").trim();
+      const resolvedDriverId = String(matchedDriver?._id || matchedDriver?.id || "").trim();
+
+      if (resolvedName) {
+        setUserName(resolvedName);
+        localStorage.setItem("smartbin-user-name", resolvedName);
+      }
+      if (resolvedVehicle) {
+        setVehicleNumber(resolvedVehicle);
+        localStorage.setItem("smartbin-vehicle-number", resolvedVehicle);
+      }
+      if (resolvedDriverId && !driverId) {
+        setDriverProfile((prev) => ({ ...prev, id: resolvedDriverId }));
+        localStorage.setItem("smartbin-driver-id", resolvedDriverId);
+      }
+    };
+
+    hydrateDriverDetails();
+
+    return () => {
+      mounted = false;
+    };
+  }, [driverProfile.id, driverProfile.email]);
+
   const handlePickup = async (binId) => {
     await driverApiService.markCollected({
       binId,
@@ -214,6 +293,7 @@ const DriverDashboard = () => {
     localStorage.removeItem("auth-token");
     localStorage.removeItem("smartbin-email");
     localStorage.removeItem("smartbin-driver-id");
+    localStorage.removeItem("smartbin-vehicle-number");
     navigate("/");
   };
 
@@ -360,7 +440,7 @@ const DriverDashboard = () => {
 
           <div className="mx-4 mb-4 mt-auto rounded-xl border border-(--color-accent-20) bg-(--color-surface-soft) p-4">
             <p className="font-semibold text-(--color-text)">{userName}</p>
-            <p className="text-sm text-(--color-text-muted)">Field Driver</p>
+            <p className="text-sm text-(--color-text-muted)">Vehicle Number: {vehicleNumber || "-"}</p>
             <button
               type="button"
               onClick={handleLogout}
@@ -395,7 +475,7 @@ const DriverDashboard = () => {
 
           <div className="m-4 rounded-xl border border-(--color-accent-20) bg-(--color-surface-soft) p-4">
             <p className="font-semibold text-(--color-text)">{userName}</p>
-            <p className="text-sm text-(--color-text-muted)">Field Driver</p>
+            <p className="text-sm text-(--color-text-muted)">Vehicle Number: {vehicleNumber || "-"}</p>
             <button
               type="button"
               onClick={handleLogout}

@@ -6,6 +6,7 @@ const RAW_BASE =
 const BASE = RAW_BASE.replace(/\/$/, "");
 const BIN_CACHE_KEY = "smartbin-known-bin-ids";
 const BIN_LIST_ENDPOINT_STATUS_KEY = "smartbin-bin-list-endpoint-status";
+const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
 
 function getStoredToken() {
   if (typeof window === "undefined") return "";
@@ -108,7 +109,12 @@ function readKnownBinIds() {
   try {
     const raw = localStorage.getItem(BIN_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string" && id.trim()) : [];
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((id) => typeof id === "string" && id.trim())
+          .map((id) => String(id).trim())
+          .filter((id) => OBJECT_ID_REGEX.test(id))
+      : [];
   } catch {
     return [];
   }
@@ -142,7 +148,7 @@ function extractBins(data) {
 
 function rememberBinsFromResponseData(data) {
   const bins = extractBins(data);
-  bins.forEach((bin) => rememberBinId(bin?.binNumber || bin?.binId || bin?.id));
+  bins.forEach((bin) => rememberBinId(bin?._id || bin?.id));
 }
 
 function readBinListEndpointStatus() {
@@ -163,8 +169,13 @@ function getDeleteIdCandidates(input) {
   }
 
   if (input && typeof input === "object") {
-    const raw = Array.isArray(input.candidates) ? input.candidates : [input.binId, input.id, input._id, input.binNumber, input.deleteId];
-    return [...new Set(raw.map((id) => String(id || "").trim()).filter(Boolean))];
+    const raw = Array.isArray(input.candidates)
+      ? input.candidates
+      : [input._id, input.id, input.deleteId, input.binNumber, input.binId];
+    const normalized = [...new Set(raw.map((id) => String(id || "").trim()).filter(Boolean))];
+    const objectIds = normalized.filter((id) => OBJECT_ID_REGEX.test(id));
+    const nonObjectIds = normalized.filter((id) => !OBJECT_ID_REGEX.test(id));
+    return [...objectIds, ...nonObjectIds];
   }
 
   const id = String(input || "").trim();
@@ -206,7 +217,7 @@ export async function apiFetch(path, options = {}) {
       ok: false,
       status: 0,
       data: {
-        message: "Network error. Please check your internet connection and API base URL.",
+        message: "Network error. Please check your internet connection.",
         details: error?.message || "Unknown network error",
       },
     };
@@ -240,7 +251,7 @@ export const binApi = {
         return res;
       }
 
-      if ([404, 405].includes(res.status)) {
+      if ([404, 405, 500, 502, 503].includes(res.status)) {
         writeBinListEndpointStatus("unsupported");
       }
     }
@@ -256,7 +267,7 @@ export const binApi = {
         if (!item.ok) return null;
         const bin = item?.data?.bin || item?.data?.data?.bin || item?.data?.data || item?.data;
         if (!bin) return null;
-        rememberBinId(bin?.binNumber || bin?.binId || bin?.id || binId);
+        rememberBinId(bin?._id || bin?.id || binId);
         return bin;
       })
     );
@@ -271,7 +282,7 @@ export const binApi = {
     const res = await apiFetch(API_ENDPOINTS.bin.create, { method: "POST", body: payload });
     if (res.ok) {
       const created = res?.data?.bin || res?.data?.data?.bin || res?.data?.data || res?.data;
-      rememberBinId(created?.binNumber || created?.binId || created?.id || payload?.binNumber);
+      rememberBinId(created?._id || created?.id);
     }
     return res;
   },
@@ -279,7 +290,7 @@ export const binApi = {
     const res = await apiFetch(API_ENDPOINTS.bin.byId(binId));
     if (res.ok) {
       const found = res?.data?.bin || res?.data?.data?.bin || res?.data?.data || res?.data;
-      rememberBinId(found?.binNumber || found?.binId || found?.id || binId);
+      rememberBinId(found?._id || found?.id || binId);
     }
     return res;
   },
@@ -566,6 +577,22 @@ export const driverApi = {
         ...(withBody ? { body: { driverId } } : {}),
       });
       if (res.ok || ![404, 405].includes(res.status)) return res;
+    }
+
+
+    const deactivate = await apiFetch(API_ENDPOINTS.driver.updateStatus(driverId), {
+      method: "PATCH",
+      body: { status: "offline" },
+    });
+
+    if (deactivate.ok) {
+      return {
+        ...deactivate,
+        data: {
+          ...(deactivate?.data || {}),
+          message: "Driver deleted successfully",
+        },
+      };
     }
 
     return { ok: false, status: 404, data: { message: "Driver delete endpoint not found" } };

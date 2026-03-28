@@ -120,8 +120,8 @@ const AdminDashboard = () => {
       const parsedLocation = parseLocation(s.location);
       const fillValue = Number(s.fill?.value ?? s.fill ?? 0);
       const mongoId = findFirstObjectId(s) || null;
-      const displayId = String(s.binNumber || s.binId || s.id || `BIN-${index + 1}`).trim();
-      const deleteId = String(s.binNumber || s.binId || s.id || s._id || displayId).trim();
+      const displayId = String(s.binNumber || s.binId || s.id || s._id || `BIN-${index + 1}`).trim();
+      const deleteId = String(mongoId || s._id || s.id || displayId).trim();
       return {
         _id: mongoId,
         id: displayId,
@@ -185,7 +185,9 @@ const AdminDashboard = () => {
         .filter((driver) => {
           const topRole = String(driver?.role || "").toLowerCase();
           const userRole = String(driver?.user?.role || "").toLowerCase();
-          return topRole === "driver" || userRole === "driver" || Boolean(driver?.user);
+          const status = String(driver?.status || "").toLowerCase();
+          const isDriver = topRole === "driver" || userRole === "driver" || Boolean(driver?.user);
+          return isDriver && status !== "offline";
         })
         .map((driver) => {
           const rawUser = driver?.user;
@@ -212,6 +214,7 @@ const AdminDashboard = () => {
             email: derivedEmail,
             role: driver.role || (typeof rawUser === "object" ? rawUser?.role : "") || linkedUser?.role || "driver",
             vehicleNumber: driver.vehicleNumber || "-",
+            status: String(driver?.status || "available").toLowerCase(),
             createdAt: driver.createdAt || null,
           };
         });
@@ -496,7 +499,10 @@ const AdminDashboard = () => {
         return;
       }
 
-      setDriverActionMessage(`Driver ${driverToRemove.name} removed successfully.`);
+      const successMessage =
+        res?.data?.message ||
+        `Driver ${driverToRemove.name} removed successfully.`;
+      setDriverActionMessage(successMessage);
       await fetchDriversData();
       setDriverToRemove(null);
     } finally {

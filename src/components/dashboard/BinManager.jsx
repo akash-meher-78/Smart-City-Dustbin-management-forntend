@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useToast, ToastContainer } from "../ui/Toast";
 
+const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
+
 const resolveBinIdentifier = (bin) =>
   String(bin?.binNumber || bin?.binId || bin?.id || bin?._id || "").trim();
 
@@ -8,10 +10,13 @@ const resolveDeleteIdentifier = (bin) =>
   String(bin?.deleteId || bin?._id || bin?.binNumber || bin?.binId || bin?.id || "").trim();
 
 const resolveDeleteCandidates = (bin) => {
-  const candidates = [bin?.deleteId, bin?._id, bin?.binNumber, bin?.binId, bin?.id]
+  const candidates = [bin?.deleteId, bin?._id, bin?.id, bin?.binNumber, bin?.binId]
     .map((value) => String(value || "").trim())
     .filter(Boolean);
-  return [...new Set(candidates)];
+  const uniq = [...new Set(candidates)];
+  const objectIds = uniq.filter((id) => OBJECT_ID_REGEX.test(id));
+  const nonObjectIds = uniq.filter((id) => !OBJECT_ID_REGEX.test(id));
+  return [...objectIds, ...nonObjectIds];
 };
 
 const resolveBinLabel = (bin) =>
@@ -40,8 +45,11 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
 
     setIsSubmitting(true);
     try {
-      const existing = await onGetBinById(cleanBinId);
-      if (existing?.ok && existing?.data) {
+      const duplicate = bins.some((bin) => {
+        const existingLabel = resolveBinLabel(bin).toLowerCase();
+        return existingLabel === cleanBinId.toLowerCase();
+      });
+      if (duplicate) {
         error(`Bin ID ${cleanBinId} already exists`, "Duplicate Bin");
         return;
       }
@@ -123,6 +131,25 @@ const BinManager = ({ bins, onCreateBin, onDeleteBin, onGetBinById, onRefresh })
     const targetBinId = String(lookupBinId || "").trim();
     if (!targetBinId) {
       error("Enter Bin ID to fetch", "Lookup Failed");
+      return;
+    }
+
+    const localMatch = bins.find((bin) => {
+      const candidates = [bin?.binNumber, bin?.id, bin?.deleteId, bin?._id]
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter(Boolean);
+      return candidates.includes(targetBinId.toLowerCase());
+    });
+
+    if (localMatch) {
+      setLookupResult(localMatch.raw || localMatch);
+      success(`Bin ${resolveBinLabel(localMatch)} found`, "Lookup Complete");
+      return;
+    }
+
+    if (!OBJECT_ID_REGEX.test(targetBinId)) {
+      error("For server lookup, enter Mongo _id. binNumber lookup works from local list only.", "Lookup Failed");
+      setLookupResult(null);
       return;
     }
 
