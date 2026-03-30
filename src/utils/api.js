@@ -5,7 +5,8 @@ const RAW_BASE =
   import.meta.env.VITE_API_BASE ||
   "http://localhost:3000";
 
-const BASE = RAW_BASE.replace(/\/$/, "");
+// const BASE = RAW_BASE.replace(/\/$/, "");
+const BASE = " ";
 const BIN_CACHE_KEY = "smartbin-known-bin-ids";
 const BIN_LIST_ENDPOINT_STATUS_KEY = "smartbin-bin-list-endpoint-status";
 const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
@@ -389,7 +390,7 @@ export const routeApi = {
       bins: objectIdBins,
     };
 
-    const createCandidates = ["/api.routes", API_ENDPOINTS.route.create, "/api/route", "/api/route/create"];
+    const createCandidates = ["/api/routes", API_ENDPOINTS.route.create, "/api/route", "/api/route/create"];
 
     for (const path of createCandidates) {
       const res = await apiFetch(path, { method: "POST", body: normalizedPayload });
@@ -404,7 +405,7 @@ export const routeApi = {
   },
 
   getAllRoutes: async () => {
-    const candidates = ["/api.routes", API_ENDPOINTS.route.all, "/api/route", "/api/route/all"];
+    const candidates = ["/api/routes", API_ENDPOINTS.route.all, "/api/route", "/api/route/all"];
 
     for (const path of candidates) {
       const res = await apiFetch(path);
@@ -420,7 +421,7 @@ export const routeApi = {
     }
 
     const candidates = [
-      `/api.routes/drivers/${encodeURIComponent(driverId)}`,
+      `/api/routes/drivers/${encodeURIComponent(driverId)}`,
       API_ENDPOINTS.route.byDriverId(driverId),
       `/api/routes/driver/${encodeURIComponent(driverId)}`,
       `/api/route/driver/${encodeURIComponent(driverId)}`,
@@ -441,7 +442,7 @@ export const routeApi = {
     }
 
     const candidates = [
-      `/api.routes/${encodeURIComponent(routeId)}`,
+      `/api/routes/${encodeURIComponent(routeId)}`,
       API_ENDPOINTS.route.byId(routeId),
       `/api/route/${encodeURIComponent(routeId)}`,
     ];
@@ -463,7 +464,7 @@ export const routeApi = {
     const safeLat = Number.isFinite(Number(lat)) ? Number(lat) : 0;
 
     const candidates = [
-      `/api.routes/${encodeURIComponent(driverId)}/optimize?lng=${encodeURIComponent(safeLng)}&lat=${encodeURIComponent(safeLat)}`,
+      `/api/routes/${encodeURIComponent(driverId)}/optimize?lng=${encodeURIComponent(safeLng)}&lat=${encodeURIComponent(safeLat)}`,
       API_ENDPOINTS.route.optimize(driverId, safeLng, safeLat),
       `/api/route/${encodeURIComponent(driverId)}/optimize?lng=${encodeURIComponent(safeLng)}&lat=${encodeURIComponent(safeLat)}`,
     ];
@@ -482,7 +483,7 @@ export const routeApi = {
     }
 
     const candidates = [
-      `/api.routes/${encodeURIComponent(routeId)}`,
+      `/api/routes/${encodeURIComponent(routeId)}`,
       API_ENDPOINTS.route.byId(routeId),
       `/api/route/${encodeURIComponent(routeId)}`,
     ];
@@ -504,12 +505,12 @@ export const routeApi = {
     const candidates = [];
     if (email) {
       candidates.push(
-        `/api.routes/driver?email=${encodeURIComponent(email)}`,
+        `/api/routes/driver?email=${encodeURIComponent(email)}`,
         `/api/routes/driver?email=${encodeURIComponent(email)}`,
         `/api/driver/routes?email=${encodeURIComponent(email)}`
       );
     }
-    candidates.push("/api.routes/assigned", "/api/route/assigned", "/api/routes/assigned");
+    candidates.push("/api/routes/assigned", "/api/route/assigned", "/api/routes/assigned");
 
     for (const path of [...new Set(candidates)]) {
       const res = await apiFetch(path);
