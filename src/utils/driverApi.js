@@ -9,7 +9,7 @@ export const driverApiService = {
   getAllRoutes: () => routeApi.getAllRoutes(),
   getRouteByDriver: (driverId) => routeApi.getRouteByDriver(driverId),
   getRouteById: (routeId) => routeApi.getRouteById(routeId),
-  getAssignedRoute: ({ driverId, email } = {}) => routeApi.getAssignedRoute({ driverId, email }),
+  getAssignedRoute: ({ driverId } = {}) => routeApi.getAssignedRoute({ driverId }),
   optimizeRoute: ({ driverId, lng, lat }) => routeApi.optimizeRoute({ driverId, lng, lat }),
   deleteRoute: (routeId) => routeApi.deleteRoute(routeId),
   markCollected: (payload) => routeApi.markCollected(payload),

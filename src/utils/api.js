@@ -1,4 +1,5 @@
 import axios from "axios";
+import { useAuth } from "../hooks/useApi";
 
 const RAW_BASE =
   import.meta.env.VITE_API_BASE_URL ||
@@ -6,7 +7,6 @@ const RAW_BASE =
   "http://localhost:3000";
 
 const BASE = RAW_BASE.replace(/\/$/, "");
-// const BASE = " ";
 const BIN_CACHE_KEY = "smartbin-known-bin-ids";
 const BIN_LIST_ENDPOINT_STATUS_KEY = "smartbin-bin-list-endpoint-status";
 const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
@@ -67,10 +67,9 @@ export const API_ENDPOINTS = {
   },
   bin: {
     all: "/api/bins",
-    fillLevels: "/api/bins",
     create: "/api/bins",
-    byId: (binId) => `/api/bins/${encodeURIComponent(binId)}`,
-    deleteById: (binId) => `/api/bins/${encodeURIComponent(binId)}`,
+    byId: (binId) => `/api/bins/${binId}`,
+    deleteById: (binId) => `/api/bins/${binId}`,
   },
   pickup: {
     all: "/api/pickups",
@@ -114,9 +113,9 @@ function readKnownBinIds() {
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed)
       ? parsed
-          .filter((id) => typeof id === "string" && id.trim())
-          .map((id) => String(id).trim())
-          .filter((id) => OBJECT_ID_REGEX.test(id))
+        .filter((id) => typeof id === "string" && id.trim())
+        .map((id) => String(id).trim())
+        .filter((id) => OBJECT_ID_REGEX.test(id))
       : [];
   } catch {
     return [];
@@ -232,7 +231,7 @@ export async function apiFetch(path, options = {}) {
 export const authApi = {
   register: (payload) => apiFetch(API_ENDPOINTS.auth.register, { method: "POST", body: payload, useAuth: false }),
   login: (payload) => apiFetch(API_ENDPOINTS.auth.login, { method: "POST", body: payload, useAuth: false }),
-  logout: () => apiFetch(API_ENDPOINTS.auth.logout, { method: "GET" }),
+  logout: () => apiFetch(API_ENDPOINTS.auth.logout, { method: "GET", useAuth: true }),
   sendOtp: (payload) => apiFetch(API_ENDPOINTS.auth.sendOtp, { method: "POST", body: payload, useAuth: false }),
   verifyOtp: (payload) => apiFetch(API_ENDPOINTS.auth.verifyOtp, { method: "POST", body: payload, useAuth: false }),
 };
@@ -359,8 +358,8 @@ export const routeApi = {
     const rawBins = Array.isArray(payload?.bins)
       ? payload.bins
       : Array.isArray(payload?.binIds)
-      ? payload.binIds
-      : [];
+        ? payload.binIds
+        : [];
 
     const normalizedBins = rawBins
       .flat(2)
@@ -496,28 +495,12 @@ export const routeApi = {
     return { ok: false, status: 404, data: { message: "Route delete endpoint not found" } };
   },
 
-  getAssignedRoute: async ({ driverId, email } = {}) => {
-    if (driverId) {
-      const byDriver = await routeApi.getRouteByDriver(driverId);
-      if (byDriver.ok || ![404, 405].includes(byDriver.status)) return byDriver;
+  getAssignedRoute: async ({ driverId } = {}) => {
+    if (!driverId) {
+      return { ok: false, status: 400, data: { message: "driverId is required to fetch assigned route" } };
     }
-
-    const candidates = [];
-    if (email) {
-      candidates.push(
-        `/api/routes/driver?email=${encodeURIComponent(email)}`,
-        `/api/routes/driver?email=${encodeURIComponent(email)}`,
-        `/api/driver/routes?email=${encodeURIComponent(email)}`
-      );
-    }
-    candidates.push("/api/routes/assigned", "/api/route/assigned", "/api/routes/assigned");
-
-    for (const path of [...new Set(candidates)]) {
-      const res = await apiFetch(path);
-      if (res.ok || ![404, 405].includes(res.status)) return res;
-    }
-
-    return { ok: false, status: 404, data: { message: "Assigned route endpoint not found" } };
+    // Use only the correct endpoint for driverId
+    return await routeApi.getRouteByDriver(driverId);
   },
 
   markCollected: async (payload) => {

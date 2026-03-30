@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
 import { authApi, userApi, binApi } from '../utils/api';
 
-/**
- * Custom hook for Auth API calls with loading and error states
- * Usage: const { login, loading, error } = useAuth();
- */
+
 export const useAuth = () => {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState({
+    login: false,
+    register: false,
+  });
   const [error, setError] = useState(null);
 
   const register = useCallback(async (name, email, password, role) => {
@@ -158,10 +158,7 @@ export const useUser = () => {
   return { getCurrentUser, getAllUsers, updateCurrentUser, deleteCurrentUser, loading, error };
 };
 
-/**
- * Custom hook for Bin API calls with loading and error states
- * Usage: const { bins, createBin, loading, error } = useBin();
- */
+
 export const useBin = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

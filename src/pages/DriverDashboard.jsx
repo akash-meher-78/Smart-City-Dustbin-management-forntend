@@ -90,7 +90,6 @@ const DriverDashboard = () => {
   const fetchAssignedRoute = useCallback(async () => {
     const res = await driverApiService.getAssignedRoute({
       driverId: driverProfile.id,
-      email: driverProfile.email,
     });
 
     if (!res?.ok) {
