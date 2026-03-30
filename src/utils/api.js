@@ -5,8 +5,8 @@ const RAW_BASE =
   import.meta.env.VITE_API_BASE ||
   "http://localhost:3000";
 
-// const BASE = RAW_BASE.replace(/\/$/, "");
-const BASE = "";
+const BASE = RAW_BASE.replace(/\/$/, "");
+// const BASE = "";
 const BIN_CACHE_KEY = "smartbin-known-bin-ids";
 const BIN_LIST_ENDPOINT_STATUS_KEY = "smartbin-bin-list-endpoint-status";
 const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
