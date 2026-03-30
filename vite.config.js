@@ -9,12 +9,13 @@ export default defineConfig({
 		tailwindcss(),
 	],
 	server: {
-		proxy: {
-			"/api": {
-				target: "https://smart-city-dustbin-management-system.onrender.com",
-				changeOrigin: true,
-				secure: false,
-			},
-		},
+		host : '0.0.0.0',
+		// proxy: {
+		// 	"/api": {
+		// 		target: "https://smart-city-dustbin-management-system.onrender.com",
+		// 		changeOrigin: true,
+		// 		secure: false,
+		// 	},
+		// },
 	}
 })
