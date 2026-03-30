@@ -1,9 +1,12 @@
+import axios from "axios";
+
 const RAW_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_BASE ||
   "http://localhost:3000";
 
-const BASE = RAW_BASE.replace(/\/$/, "");
+// const BASE = RAW_BASE.replace(/\/$/, "");
+const BASE = "";
 const BIN_CACHE_KEY = "smartbin-known-bin-ids";
 const BIN_LIST_ENDPOINT_STATUS_KEY = "smartbin-bin-list-endpoint-status";
 const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
@@ -182,43 +185,45 @@ function getDeleteIdCandidates(input) {
   return id ? [id] : [];
 }
 
-export async function apiFetch(path, options = {}) {
-  const url = `${BASE}${path}`;
+const axiosInstance = axios.create({
+  baseURL: BASE,
+});
+
+axiosInstance.interceptors.request.use((config) => {
   const token = getStoredToken();
-  const { withCredentials, useAuth = true, ...rawOptions } = options;
-  const defaultOptions = {
-    headers: {
-      "Content-Type": "application/json",
-      ...(useAuth && token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: withCredentials === true ? "include" : getDefaultCredentials(),
-  };
-
-  const merged = {
-    ...defaultOptions,
-    ...rawOptions,
-    headers: { ...defaultOptions.headers, ...(rawOptions.headers || {}) },
-  };
-
-  if (merged.body && typeof merged.body !== "string") {
-    merged.body = JSON.stringify(merged.body);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
+  return config;
+});
+
+export async function apiFetch(path, options = {}) {
+  const { method = "GET", body, headers = {} } = options;
 
   try {
-    const res = await fetch(url, merged);
-    const text = await res.text();
-    try {
-      return { ok: res.ok, status: res.status, data: text ? JSON.parse(text) : null };
-    } catch {
-      return { ok: res.ok, status: res.status, data: text };
-    }
+    const res = await axiosInstance({
+      url: path,
+      method,
+      data: body,
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      withCredentials: getDefaultCredentials() === "include",
+    });
+
+    return {
+      ok: true,
+      status: res.status,
+      data: res.data,
+    };
   } catch (error) {
     return {
       ok: false,
-      status: 0,
-      data: {
-        message: "Network error. Please check your internet connection.",
-        details: error?.message || "Unknown network error",
+      status: error.response?.status || 0,
+      data: error.response?.data || {
+        message: "Network error",
+        details: error.message,
       },
     };
   }
