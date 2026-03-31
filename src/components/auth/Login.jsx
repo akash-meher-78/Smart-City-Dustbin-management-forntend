@@ -26,14 +26,14 @@ const Login = ({ onRegister }) => {
         e.preventDefault();
 
         if (isLoading) return;
-        
+
         if (!username.includes('@')) {
             setFormMessage('Please enter a valid email address');
             return;
         }
 
         setFormMessage('');
-        
+
         (async () => {
             try {
                 setIsLoading(true);
@@ -59,16 +59,46 @@ const Login = ({ onRegister }) => {
                     localStorage.removeItem('smartbin-driver-id');
 
                     if (apiRole === 'driver') {
-                        const resolveRes = await driverApi.resolveDriverIdByUser({
-                            userId: userData?._id || userData?.id,
-                            email: username.trim(),
-                        });
+                        try {
+                            const resolveRes = await driverApi.resolveDriverIdByUser({
+                                userId: userData?._id || userData?.id,
+                                email: username.trim(),
+                            });
 
-                        if (resolveRes?.ok) {
-                            const resolvedDriverId = resolveRes.data?.driverId;
-                            if (resolvedDriverId) {
+                            if (resolveRes?.ok && resolveRes.data?.driverId) {
+                                const resolvedDriverId = resolveRes.data.driverId;
+
+                                // ✅ SAVE DRIVER ID (MAIN FIX)
                                 localStorage.setItem('smartbin-driver-id', resolvedDriverId);
+
+                                console.log("Driver ID saved:", resolvedDriverId);
+                            } else {
+                                console.warn("Driver not found, trying fallback...");
+
+                                // 🔥 FALLBACK (VERY IMPORTANT)
+                                const allDriversRes = await driverApi.getAll();
+
+                                if (allDriversRes?.ok) {
+                                    const drivers = allDriversRes.data?.drivers || allDriversRes.data || [];
+
+                                    const driver = drivers.find(
+                                        d =>
+                                            d.email?.toLowerCase() === username.trim().toLowerCase() ||
+                                            d.user?.email?.toLowerCase() === username.trim().toLowerCase()
+                                    );
+
+                                    if (driver) {
+                                        const driverId = driver._id || driver.id;
+
+                                        localStorage.setItem('smartbin-driver-id', driverId);
+                                        localStorage.setItem('smartbin-user-name', driver.name || driver.user?.name || "");
+
+                                        console.log("Driver ID (fallback):", driverId);
+                                    }
+                                }
                             }
+                        } catch (err) {
+                            console.error("Driver resolve failed:", err);
                         }
                     }
 
@@ -77,6 +107,21 @@ const Login = ({ onRegister }) => {
                     }
                     if (refreshToken) {
                         document.cookie = `refresh-token=${refreshToken}; path=/; max-age=604800; secure; samesite=strict`;
+                    }
+
+                    // ✅ Ensure driverId is saved before navigating
+                    if (apiRole === 'driver') {
+                        const driverId = localStorage.getItem("smartbin-driver-id");
+
+                        if (!driverId) {
+                            console.warn("Driver ID missing, waiting...");
+
+                            setTimeout(() => {
+                                navigate('/dashboard/driver');
+                            }, 200); 
+
+                            return;
+                        }
                     }
 
                     navigate(apiRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
@@ -117,11 +162,10 @@ const Login = ({ onRegister }) => {
                     {/* Admin Card */}
                     <div
                         onClick={() => handleRoleChange('admin')}
-                        className={`flex flex-col items-center justify-center h-20 sm:h-24 rounded-2xl cursor-pointer transition-all duration-300 ${
-                            role === 'admin'
-                                ? 'bg-(--color-primary-20) border-2 border-(--color-primary)'
-                                : 'bg-(--color-card) border-2 border-transparent hover:border-(--color-accent-35)'
-                        }`}
+                        className={`flex flex-col items-center justify-center h-20 sm:h-24 rounded-2xl cursor-pointer transition-all duration-300 ${role === 'admin'
+                            ? 'bg-(--color-primary-20) border-2 border-(--color-primary)'
+                            : 'bg-(--color-card) border-2 border-transparent hover:border-(--color-accent-35)'
+                            }`}
                     >
                         <ShieldCheck
                             size={24}
@@ -133,11 +177,10 @@ const Login = ({ onRegister }) => {
                     {/* Driver Card */}
                     <div
                         onClick={() => handleRoleChange('driver')}
-                        className={`flex flex-col items-center justify-center h-20 sm:h-24 rounded-2xl cursor-pointer transition-all duration-300 ${
-                            role === 'driver'
-                                ? 'bg-(--color-primary-20) border-2 border-(--color-primary)'
-                                : 'bg-(--color-card) border-2 border-transparent hover:border-(--color-accent-35)'
-                        }`}
+                        className={`flex flex-col items-center justify-center h-20 sm:h-24 rounded-2xl cursor-pointer transition-all duration-300 ${role === 'driver'
+                            ? 'bg-(--color-primary-20) border-2 border-(--color-primary)'
+                            : 'bg-(--color-card) border-2 border-transparent hover:border-(--color-accent-35)'
+                            }`}
                     >
                         <Truck
                             size={24}
@@ -199,11 +242,10 @@ const Login = ({ onRegister }) => {
                 <button
                     type="submit"
                     disabled={isLoading}
-                    className={`w-full text-(--color-text) font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg uppercase tracking-wide ${
-                        role === 'admin'
-                            ? 'bg-(--color-primary) hover:brightness-110'
-                            : 'bg-(--color-primary) hover:brightness-110'
-                    }`}
+                    className={`w-full text-(--color-text) font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg uppercase tracking-wide ${role === 'admin'
+                        ? 'bg-(--color-primary) hover:brightness-110'
+                        : 'bg-(--color-primary) hover:brightness-110'
+                        }`}
                 >
                     {isLoading ? (
                         <span className="btn-loading">

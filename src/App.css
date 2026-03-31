@@ -1,5 +1,5 @@
 button {
-  cursor : pointer;
+  cursor: pointer;
 }
 
 .btn-loading {
@@ -37,6 +37,7 @@ button {
   }
 }
 
+/* ✅ FIXED */
 @keyframes dot-blink {
   0%,
   20% {
@@ -48,4 +49,27 @@ button {
   100% {
     opacity: 0.2;
   }
+}
+
+.global-loader-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.35);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.global-loader-spinner {
+  background: rgba(0,0,0,0.7);
+  padding: 32px 40px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2);
 }

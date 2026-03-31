@@ -1,5 +1,3 @@
-
-// Beginner-friendly MapView component
 import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -30,28 +28,51 @@ function MapView({ bins, routeBins, driverLocation }) {
         return (driverLat != null && driverLng != null)
             ? [[driverLat, driverLng], ...routePoints]
             : routePoints;
-    }, [driverLat, driverLng, JSON.stringify(routePoints)]);
+    }, [driverLat, driverLng, routePoints]);
 
     // Fetch road route from OSRM API
     useEffect(() => {
-        async function fetchRoadRoute() {
+        let isMounted = true;
+
+        const fetchRoadRoute = async () => {
             if (routeWithDriver.length < 2) {
                 setRoadRoute([]);
                 return;
             }
+
             try {
-                const coordinates = routeWithDriver.map(([lat, lng]) => `${lng},${lat}`).join(";");
-                const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`);
-                if (!response.ok) throw new Error("Failed to fetch route");
+                const coordinates = routeWithDriver
+                    .map(([lat, lng]) => `${lng},${lat}`)
+                    .join(";");
+
+                const response = await fetch(
+                    `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`
+                );
+
+                if (!response.ok) throw new Error();
+
                 const data = await response.json();
-                if (!data.routes || !data.routes.length) throw new Error("No route found");
-                const roadPoints = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+
+                if (!data.routes?.length) throw new Error();
+
+                if (!isMounted) return;
+
+                const roadPoints = data.routes[0].geometry.coordinates.map(
+                    ([lng, lat]) => [lat, lng]
+                );
+
                 setRoadRoute(roadPoints);
             } catch {
-                setRoadRoute(routeWithDriver);
+                if (isMounted) setRoadRoute(routeWithDriver);
             }
-        }
-        fetchRoadRoute();
+        };
+
+        const timeout = setTimeout(fetchRoadRoute, 500); // ✅ debounce
+
+        return () => {
+            isMounted = false;
+            clearTimeout(timeout);
+        };
     }, [routeWithDriver]);
 
     return (

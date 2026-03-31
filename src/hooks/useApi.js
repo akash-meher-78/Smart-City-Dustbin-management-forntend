@@ -1,17 +1,27 @@
 import { useCallback, useState } from 'react';
+import { useGlobalLoading } from '../App';
 import { authApi, userApi, binApi } from '../utils/api';
 
-
+/**
+ * AUTH HOOK
+ */
 export const useAuth = () => {
   const [loading, setLoading] = useState({
     login: false,
     register: false,
+    logout: false,
+    sendOtp: false,
+    verifyOtp: false,
   });
+
   const [error, setError] = useState(null);
+  const { setLoading: setGlobalLoading } = useGlobalLoading();
 
   const register = useCallback(async (name, email, password, role) => {
-    setLoading(true);
+    setLoading(prev => ({ ...prev, register: true }));
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await authApi.register({ name, email, password, role });
       if (!res.ok) throw new Error(res.data?.message || 'Registration failed');
@@ -20,13 +30,16 @@ export const useAuth = () => {
       setError(err.message);
       throw err;
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, register: false }));
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const login = useCallback(async (email, password) => {
-    setLoading(true);
+    setLoading(prev => ({ ...prev, login: true }));
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await authApi.login({ email, password });
       if (!res.ok) throw new Error(res.data?.message || 'Login failed');
@@ -35,13 +48,16 @@ export const useAuth = () => {
       setError(err.message);
       throw err;
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, login: false }));
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const logout = useCallback(async () => {
-    setLoading(true);
+    setLoading(prev => ({ ...prev, logout: true }));
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await authApi.logout();
       if (!res.ok) throw new Error(res.data?.message || 'Logout failed');
@@ -50,13 +66,16 @@ export const useAuth = () => {
       setError(err.message);
       throw err;
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, logout: false }));
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const sendOtp = useCallback(async (email) => {
-    setLoading(true);
+    setLoading(prev => ({ ...prev, sendOtp: true }));
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await authApi.sendOtp({ email });
       if (!res.ok) throw new Error(res.data?.message || 'OTP send failed');
@@ -65,13 +84,16 @@ export const useAuth = () => {
       setError(err.message);
       throw err;
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, sendOtp: false }));
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const verifyOtp = useCallback(async (email, otp) => {
-    setLoading(true);
+    setLoading(prev => ({ ...prev, verifyOtp: true }));
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await authApi.verifyOtp({ email, otp });
       if (!res.ok) throw new Error(res.data?.message || 'OTP verification failed');
@@ -80,24 +102,28 @@ export const useAuth = () => {
       setError(err.message);
       throw err;
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, verifyOtp: false }));
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   return { register, login, logout, sendOtp, verifyOtp, loading, error };
 };
 
+
 /**
- * Custom hook for User API calls with loading and error states
- * Usage: const { currentUser, updateUser, loading, error } = useUser();
+ * USER HOOK
  */
 export const useUser = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { setLoading: setGlobalLoading } = useGlobalLoading();
 
   const getCurrentUser = useCallback(async () => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await userApi.getCurrent();
       if (!res.ok) throw new Error(res.data?.message || 'Failed to fetch current user');
@@ -107,12 +133,15 @@ export const useUser = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const getAllUsers = useCallback(async () => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await userApi.getAll();
       if (!res.ok) throw new Error(res.data?.message || 'Failed to fetch users');
@@ -122,12 +151,15 @@ export const useUser = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const updateCurrentUser = useCallback(async (updates) => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await userApi.updateCurrent(updates);
       if (!res.ok) throw new Error(res.data?.message || 'Failed to update user');
@@ -137,12 +169,15 @@ export const useUser = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const deleteCurrentUser = useCallback(async () => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await userApi.deleteCurrent();
       if (!res.ok) throw new Error(res.data?.message || 'Failed to delete user');
@@ -152,23 +187,27 @@ export const useUser = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   return { getCurrentUser, getAllUsers, updateCurrentUser, deleteCurrentUser, loading, error };
 };
 
+
 /**
- * Custom hook for Bin API calls with loading and error states
- * Usage: const { bins, createBin, loading, error } = useBin();
+ * BIN HOOK
  */
 export const useBin = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { setLoading: setGlobalLoading } = useGlobalLoading();
 
   const getAllBins = useCallback(async () => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await binApi.getAll();
       if (!res.ok) throw new Error(res.data?.message || 'Failed to fetch bins');
@@ -178,12 +217,15 @@ export const useBin = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const createBin = useCallback(async (location, binHeight, binNumber) => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await binApi.create({ location, binHeight, binNumber });
       if (!res.ok) throw new Error(res.data?.message || 'Failed to create bin');
@@ -193,12 +235,15 @@ export const useBin = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   const getBinById = useCallback(async (binId) => {
     setLoading(true);
+    setGlobalLoading(true);
     setError(null);
+
     try {
       const res = await binApi.getById(binId);
       if (!res.ok) throw new Error(res.data?.message || 'Failed to fetch bin');
@@ -208,10 +253,12 @@ export const useBin = () => {
       throw err;
     } finally {
       setLoading(false);
+      setGlobalLoading(false);
     }
-  }, []);
+  }, [setGlobalLoading]);
 
   return { getAllBins, createBin, getBinById, loading, error };
 };
+
 
 export default { useAuth, useUser, useBin };

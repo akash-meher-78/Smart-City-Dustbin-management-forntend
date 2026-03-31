@@ -73,63 +73,74 @@ const DriverDashboard = () => {
   }, []);
 
   const fetchBinsData = useCallback(async () => {
-    const res = await driverApiService.getBinFillLevels();
-    const payload = res.data;
-    const serverBins = Array.isArray(payload?.bins) ? payload.bins : Array.isArray(payload) ? payload : [];
+    try {
+      const res = await driverApiService.getBinFillLevels();
 
-    if (!res.ok) {
+      if (!res || (!res.ok && res.status !== 304)) {
+        setLiveBins([]);
+        return;
+      }
+
+      const payload = res?.data || {};
+      const serverBins = Array.isArray(payload?.bins)
+        ? payload.bins
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+      const normalized = serverBins.map((s, index) => normalizeBin(s, index));
+      setLiveBins(normalized);
+
+    } catch (err) {
+      console.error("Fetch bins error:", err);
       setLiveBins([]);
-      return;
     }
-
-    const normalized = serverBins.map((s, index) => normalizeBin(s, index));
-
-    setLiveBins(normalized);
   }, [normalizeBin]);
 
+
   const fetchAssignedRoute = useCallback(async () => {
-    const res = await driverApiService.getAssignedRoute({
-      driverId: driverProfile.id,
-    });
+    try {
+      const driverId = driverProfile.id;
 
-    if (!res?.ok) {
-      setAssignedRouteBins([]);
-      setRouteError("");
-      return;
+      // 🚨 STOP if no driverId
+      if (!driverId) {
+        console.warn("Driver ID missing, skipping route fetch");
+        return;
+      }
+
+      const res = await driverApiService.getAssignedRoute({ driverId });
+
+      if (!res || res.status === 404) {
+        console.warn("No route found for this driver");
+        setAssignedRouteBins([]);
+        return;
+      }
+
+      if (!res.ok) {
+        setAssignedRouteBins([]);
+        return;
+      }
+
+      const payload = res.data;
+      // continue normal logic...
+
+    } catch (err) {
+      console.error("Route error:", err);
     }
-
-    const payload = res?.data;
-    const routeBins = Array.isArray(payload?.route?.bins)
-      ? payload.route.bins
-      : Array.isArray(payload?.assignedRoute?.bins)
-      ? payload.assignedRoute.bins
-      : Array.isArray(payload?.bins)
-      ? payload.bins
-      : Array.isArray(payload?.data?.bins)
-      ? payload.data.bins
-      : [];
-
-    const normalizedRoute = routeBins
-      .map((item, index) => {
-        if (typeof item === "string") {
-          const found = liveBins.find((bin) => String(bin.id) === item);
-          return found || { id: item, fill: 0, lat: 20.2961, lng: 85.8245, pickedUp: false, updatedAt: Date.now() };
-        }
-        return normalizeBin(item, index);
-      })
-      .filter(Boolean);
-
-    setAssignedRouteBins(normalizedRoute);
-    setRouteError("");
-  }, [driverProfile.email, driverProfile.id, liveBins, normalizeBin]);
+  }, [driverProfile.id, liveBins, normalizeBin]);
 
   useEffect(() => {
     let mounted = true;
     const safeFetch = async () => {
-      if (!mounted) return;
-      await fetchBinsData();
-      if (!mounted) return;
-      await fetchAssignedRoute();
+      try {
+        if (!mounted) return;
+        await fetchBinsData();
+
+        if (!mounted) return;
+        await fetchAssignedRoute();
+      } catch (err) {
+        console.error("Dashboard crash:", err);
+      }
     };
 
     safeFetch();
@@ -174,7 +185,7 @@ const DriverDashboard = () => {
 
       const storedName = localStorage.getItem("smartbin-user-name");
       const storedEmail = localStorage.getItem("smartbin-email");
-      const storedId = localStorage.getItem("smartbin-driver-id");
+      localStorage.setItem("smartbin-driver-id", driverId);
       if (storedName) {
         setUserName(storedName);
       }
@@ -223,12 +234,12 @@ const DriverDashboard = () => {
       const allDrivers = Array.isArray(driversPayload?.drivers)
         ? driversPayload.drivers
         : Array.isArray(driversPayload?.data?.drivers)
-        ? driversPayload.data.drivers
-        : Array.isArray(driversPayload?.data)
-        ? driversPayload.data
-        : Array.isArray(driversPayload)
-        ? driversPayload
-        : [];
+          ? driversPayload.data.drivers
+          : Array.isArray(driversPayload?.data)
+            ? driversPayload.data
+            : Array.isArray(driversPayload)
+              ? driversPayload
+              : [];
 
       const matchedDriver = allDrivers.find((driver) => {
         const candidateEmail = String(driver?.email || driver?.user?.email || "")
@@ -286,14 +297,26 @@ const DriverDashboard = () => {
   };
 
   const handleLogout = async () => {
-    await authApi.logout();
-    localStorage.removeItem("smartbin-role");
-    localStorage.removeItem("smartbin-user-name");
-    localStorage.removeItem("access-token");
-    localStorage.removeItem("smartbin-email");
-    localStorage.removeItem("smartbin-driver-id");
-    localStorage.removeItem("smartbin-vehicle-number");
-    navigate("/");
+    try {
+      const res = await authApi.logout();
+
+      // Handle API failure safely (including 304 case)
+      if (res && !res.ok && res.status !== 304) {
+        console.warn("Logout API failed:", res);
+      }
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+
+      localStorage.removeItem("smartbin-role");
+      localStorage.removeItem("smartbin-user-name");
+      localStorage.removeItem("access-token");
+      localStorage.removeItem("smartbin-email");
+      localStorage.removeItem("smartbin-driver-id");
+      localStorage.removeItem("smartbin-vehicle-number");
+
+      navigate("/");
+    }
   };
 
   const renderSection = () => {
@@ -398,9 +421,8 @@ const DriverDashboard = () => {
         ) : null}
 
         <aside
-          className={`fixed inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col transform border-r border-(--color-accent-20) bg-(--color-card-95) backdrop-blur-sm transition-transform duration-300 lg:hidden ${
-            mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`fixed inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col transform border-r border-(--color-accent-20) bg-(--color-card-95) backdrop-blur-sm transition-transform duration-300 lg:hidden ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
           style={{ zIndex: 1300 }}
         >
           <div className="flex items-center justify-between border-b border-(--color-accent-15) p-4">
@@ -426,11 +448,10 @@ const DriverDashboard = () => {
                   setActiveSection(item);
                   setMobileMenuOpen(false);
                 }}
-                className={`w-full text-left rounded-lg px-3 py-2.5 font-medium transition-colors ${
-                  activeSection === item
-                    ? "bg-(--color-primary-25) text-(--color-text) border border-(--color-primary-40)"
-                    : "text-(--color-text-muted) hover:bg-(--color-card-hover)"
-                }`}
+                className={`w-full text-left rounded-lg px-3 py-2.5 font-medium transition-colors ${activeSection === item
+                  ? "bg-(--color-primary-25) text-(--color-text) border border-(--color-primary-40)"
+                  : "text-(--color-text-muted) hover:bg-(--color-card-hover)"
+                  }`}
               >
                 {item}
               </button>
@@ -461,11 +482,10 @@ const DriverDashboard = () => {
                 key={item}
                 type="button"
                 onClick={() => setActiveSection(item)}
-                className={`w-full text-left rounded-lg px-3 py-2.5 font-medium transition-colors ${
-                  activeSection === item
-                    ? "bg-(--color-primary-25) text-(--color-text) border border-(--color-primary-40)"
-                    : "text-(--color-text-muted) hover:bg-(--color-card-hover)"
-                }`}
+                className={`w-full text-left rounded-lg px-3 py-2.5 font-medium transition-colors ${activeSection === item
+                  ? "bg-(--color-primary-25) text-(--color-text) border border-(--color-primary-40)"
+                  : "text-(--color-text-muted) hover:bg-(--color-card-hover)"
+                  }`}
               >
                 {item}
               </button>
