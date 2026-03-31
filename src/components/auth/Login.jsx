@@ -49,6 +49,10 @@ const Login = ({ onRegister }) => {
                         res.data?.data?.token ||
                         res.data?.data?.accessToken;
 
+                    const refreshToken =
+                        res.data?.refreshToken ||
+                        res.data?.data?.refreshToken;
+
                     localStorage.setItem('smartbin-email', username.trim());
                     localStorage.setItem('smartbin-role', apiRole);
                     localStorage.setItem('smartbin-user-name', userData?.name || username.trim() || (apiRole === 'admin' ? 'Admin' : 'Driver'));
@@ -67,7 +71,13 @@ const Login = ({ onRegister }) => {
                             }
                         }
                     }
-                    if (authToken) localStorage.setItem('auth-token', authToken);
+
+                    if (authToken) {
+                        document.cookie = `access-token=${authToken}; path=/; max-age=3600; secure; samesite=strict`;
+                    }
+                    if (refreshToken) {
+                        document.cookie = `refresh-token=${refreshToken}; path=/; max-age=604800; secure; samesite=strict`;
+                    }
 
                     navigate(apiRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
                 } else {

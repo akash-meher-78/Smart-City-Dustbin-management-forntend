@@ -13,7 +13,7 @@ const OBJECT_ID_REGEX = /^[a-fA-F\d]{24}$/;
 
 function getStoredToken() {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem("auth-token") || "";
+  return localStorage.getItem("access-token") || "";
 }
 
 function getDefaultCredentials() {
@@ -231,7 +231,7 @@ export async function apiFetch(path, options = {}) {
 export const authApi = {
   register: (payload) => apiFetch(API_ENDPOINTS.auth.register, { method: "POST", body: payload, useAuth: false }),
   login: (payload) => apiFetch(API_ENDPOINTS.auth.login, { method: "POST", body: payload, useAuth: false }),
-  logout: () => apiFetch(API_ENDPOINTS.auth.logout, { method: "GET", useAuth: true }),
+  logout: () => apiFetch(API_ENDPOINTS.auth.logout, { method: "GET"}),
   sendOtp: (payload) => apiFetch(API_ENDPOINTS.auth.sendOtp, { method: "POST", body: payload, useAuth: false }),
   verifyOtp: (payload) => apiFetch(API_ENDPOINTS.auth.verifyOtp, { method: "POST", body: payload, useAuth: false }),
 };
@@ -324,7 +324,6 @@ export const binApi = {
         continue;
       }
 
-      // Remove all variants from local cache because server payload shape is inconsistent.
       const deletedIds = [
         candidate,
         deletedBin?.binNumber,
@@ -365,7 +364,6 @@ export const routeApi = {
       .flat(2)
       .map((value) => String(value ?? "").trim())
       .map((value) => {
-        // Recover accidentally stringified array values like "[ 'BIN-1' ]"
         const match = value.match(/^\[\s*['\"]?([^'\"\]]+)['\"]?\s*\]$/);
         return match ? match[1] : value;
       })

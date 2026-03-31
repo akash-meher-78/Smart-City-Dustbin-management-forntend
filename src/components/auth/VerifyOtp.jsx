@@ -125,7 +125,7 @@ const VerifyOtp = ({ setIsVerifying }) => {
                                     registerRes.data?.data?.accessToken;
                                 localStorage.setItem('smartbin-role', selectedRole);
                                 localStorage.setItem('smartbin-user-name', userData?.name || pendingPayload?.name || 'User');
-                                if (authToken) localStorage.setItem('auth-token', authToken);
+                                if (authToken) localStorage.setItem('access-token', authToken);
 
                                 if (selectedRole === 'driver') {
                                     const createdUserId = userData?._id || userData?.id;

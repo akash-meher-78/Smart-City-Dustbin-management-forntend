@@ -158,7 +158,10 @@ export const useUser = () => {
   return { getCurrentUser, getAllUsers, updateCurrentUser, deleteCurrentUser, loading, error };
 };
 
-
+/**
+ * Custom hook for Bin API calls with loading and error states
+ * Usage: const { bins, createBin, loading, error } = useBin();
+ */
 export const useBin = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

@@ -157,7 +157,7 @@ const DriverDashboard = () => {
 
     let mounted = true;
     (async () => {
-      const hasSession = Boolean(localStorage.getItem("auth-token") || localStorage.getItem("smartbin-role"));
+      const hasSession = Boolean(localStorage.getItem("access-token") || localStorage.getItem("smartbin-role"));
       if (!hasSession) {
         navigate("/");
         return;
@@ -289,7 +289,7 @@ const DriverDashboard = () => {
     await authApi.logout();
     localStorage.removeItem("smartbin-role");
     localStorage.removeItem("smartbin-user-name");
-    localStorage.removeItem("auth-token");
+    localStorage.removeItem("access-token");
     localStorage.removeItem("smartbin-email");
     localStorage.removeItem("smartbin-driver-id");
     localStorage.removeItem("smartbin-vehicle-number");
