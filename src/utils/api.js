@@ -1,5 +1,4 @@
 import axios from "axios";
-import { useAuth } from "../hooks/useApi";
 
 const RAW_BASE =
   import.meta.env.VITE_API_BASE_URL ||
@@ -417,20 +416,7 @@ export const routeApi = {
       return { ok: false, status: 400, data: { message: "driverId is required" } };
     }
 
-    const candidates = [
-      `/api/routes/drivers/${encodeURIComponent(driverId)}`,
-      API_ENDPOINTS.route.byDriverId(driverId),
-      `/api/routes/driver/${encodeURIComponent(driverId)}`,
-      `/api/route/driver/${encodeURIComponent(driverId)}`,
-      `/api/driver/${encodeURIComponent(driverId)}/routes`,
-    ];
-
-    for (const path of candidates) {
-      const res = await apiFetch(path);
-      if (res.ok || ![404, 405].includes(res.status)) return res;
-    }
-
-    return { ok: false, status: 404, data: { message: "Route by driver endpoint not found" } };
+    return apiFetch(API_ENDPOINTS.route.byDriverId(driverId));
   },
 
   getRouteById: async (routeId) => {

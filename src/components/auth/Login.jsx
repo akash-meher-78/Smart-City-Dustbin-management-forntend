@@ -124,6 +124,8 @@ const Login = ({ onRegister }) => {
                         }
                     }
 
+                    setUsername('');
+                    setPassword('');
                     navigate(apiRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
                 } else {
                     const errorMsg = res.data?.message || res.data?.error || res.data?.details || 'Login failed';
@@ -133,8 +135,6 @@ const Login = ({ onRegister }) => {
                 setFormMessage(`Login failed: ${error?.message || 'Unexpected error occurred'}`);
             } finally {
                 setIsLoading(false);
-                setUsername('');
-                setPassword('');
             }
         })();
     }

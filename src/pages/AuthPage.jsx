@@ -6,6 +6,7 @@ import VerifyOtp from '../components/auth/VerifyOtp';
 const AuthPage = () => {
     const [showRegister, setShowRegister] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
+    const [pendingPayload, setPendingPayload] = useState(null);
 
     return (
         <div className="min-h-screen w-full flex flex-col lg:flex-row bg-transparent relative overflow-y-auto lg:overflow-hidden">
@@ -59,11 +60,15 @@ const AuthPage = () => {
                 ) : (
                     <>
                         {isVerifying ? (
-                            <VerifyOtp setIsVerifying={setIsVerifying} />
+                            <VerifyOtp
+                                setIsVerifying={setIsVerifying}
+                                pendingPayload={pendingPayload}
+                            />
                         ) : (
                             <Register
                                 onLogin={() => setShowRegister(false)}
                                 setIsVerifying={setIsVerifying}
+                                setPendingPayload={setPendingPayload}
                             />
                         )}
                     </>

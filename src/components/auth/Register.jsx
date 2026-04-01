@@ -3,7 +3,7 @@ import { ShieldCheck, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { authApi, driverApi } from "../../utils/api";
 
-const Register = ({ onLogin, setIsVerifying}) => {
+const Register = ({ onLogin, setIsVerifying, setPendingPayload }) => {
     const navigate = useNavigate();
     const [role, setRole] = useState('driver');
     const [name, setName] = useState('');
@@ -121,7 +121,7 @@ const Register = ({ onLogin, setIsVerifying}) => {
                 localStorage.setItem('smartbin-email', email);
                 localStorage.setItem('smartbin-role', role);
                 localStorage.setItem('smartbin-user-name', name.trim());
-                localStorage.setItem('smartbin-pending-registration', JSON.stringify(payload));
+                setPendingPayload(payload);
 
                 const otpRes = await authApi.sendOtp({ email });
                 if (!otpRes.ok) {

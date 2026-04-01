@@ -32,6 +32,7 @@ const DriverDashboard = () => {
     email: localStorage.getItem("smartbin-email") || "",
   });
   const hasCheckedSession = useRef(false);
+  const nextRouteFetchAtRef = useRef(0);
   const defaultDriverLocation = useMemo(() => ({ lat: 20.2961, lng: 85.8245 }), []);
 
   const sortedByPriority = useMemo(
@@ -99,35 +100,57 @@ const DriverDashboard = () => {
 
 
   const fetchAssignedRoute = useCallback(async () => {
+    const driverId = driverProfile.id;
+    if (!driverId) return;
+    if (Date.now() < nextRouteFetchAtRef.current) return;
+
     try {
-      const driverId = driverProfile.id;
-
-      // 🚨 STOP if no driverId
-      if (!driverId) {
-        console.warn("Driver ID missing, skipping route fetch");
-        return;
-      }
-
       const res = await driverApiService.getAssignedRoute({ driverId });
-
-      if (!res || res.status === 404) {
-        console.warn("No route found for this driver");
+      if (!res?.ok) {
         setAssignedRouteBins([]);
-        return;
-      }
-
-      if (!res.ok) {
-        setAssignedRouteBins([]);
+        if (res?.status === 404) {
+          setRouteError("No route assigned yet.");
+          nextRouteFetchAtRef.current = Date.now() + 60 * 1000;
+          return;
+        }
+        nextRouteFetchAtRef.current = Date.now() + 15 * 1000;
         return;
       }
 
       const payload = res.data;
-      // continue normal logic...
+      const routeBins =
+        Array.isArray(payload?.route?.bins) ? payload.route.bins :
+        Array.isArray(payload?.assignedRoute?.bins) ? payload.assignedRoute.bins :
+        Array.isArray(payload?.bins) ? payload.bins :
+        Array.isArray(payload?.data?.bins) ? payload.data.bins : [];
 
+      const normalized = routeBins
+        .map((item, index) => {
+          if (typeof item === "string") {
+            return (
+              liveBins.find((b) => String(b.id) === item) || {
+                id: item,
+                fill: 0,
+                lat: 20.2961,
+                lng: 85.8245,
+                pickedUp: false,
+                updatedAt: Date.now(),
+              }
+            );
+          }
+          return normalizeBin(item, index);
+        })
+        .filter(Boolean);
+
+      setAssignedRouteBins(normalized);
+      setRouteError("");
+      nextRouteFetchAtRef.current = 0;
     } catch (err) {
-      console.error("Route error:", err);
+      console.error("Route fetch error:", err);
+      setAssignedRouteBins([]);
+      nextRouteFetchAtRef.current = Date.now() + 15 * 1000;
     }
-  }, [driverProfile.id, liveBins, normalizeBin]);
+  }, [driverProfile.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -166,6 +189,7 @@ const DriverDashboard = () => {
     if (hasCheckedSession.current) return;
     hasCheckedSession.current = true;
 
+
     let mounted = true;
     (async () => {
       const hasSession = Boolean(localStorage.getItem("access-token") || localStorage.getItem("smartbin-role"));
@@ -185,7 +209,8 @@ const DriverDashboard = () => {
 
       const storedName = localStorage.getItem("smartbin-user-name");
       const storedEmail = localStorage.getItem("smartbin-email");
-      localStorage.setItem("smartbin-driver-id", driverId);
+      const storedId = localStorage.getItem("smartbin-driver-id");
+
       if (storedName) {
         setUserName(storedName);
       }

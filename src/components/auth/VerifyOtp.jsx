@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authApi, driverApi } from '../../utils/api';
 
-const VerifyOtp = ({ setIsVerifying }) => {
+const VerifyOtp = ({ setIsVerifying, pendingPayload }) => {
     const [otp, setOtp] = useState(new Array(6).fill(""));
     const [seconds, setSeconds] = useState(59);
     const [formMessage, setFormMessage] = useState('');
@@ -92,18 +92,8 @@ const VerifyOtp = ({ setIsVerifying }) => {
                             const res = await authApi.verifyOtp(payload);
                             
                             if (res.ok) {
-                                const pendingRaw = localStorage.getItem('smartbin-pending-registration');
-                                if (!pendingRaw) {
+                                if (!pendingPayload) {
                                     setFormMessage('Registration details missing. Please register again.');
-                                    setIsVerifying(false);
-                                    return;
-                                }
-
-                                let pendingPayload;
-                                try {
-                                    pendingPayload = JSON.parse(pendingRaw);
-                                } catch {
-                                    setFormMessage('Invalid registration details. Please register again.');
                                     setIsVerifying(false);
                                     return;
                                 }
@@ -162,7 +152,6 @@ const VerifyOtp = ({ setIsVerifying }) => {
                                     }
                                 }
 
-                                localStorage.removeItem('smartbin-pending-registration');
                                 navigate(selectedRole === 'admin' ? '/dashboard/admin' : '/dashboard/driver');
                             } else {
                                 const errorMsg = res.data?.message || res.data?.error || res.data?.details || 'OTP verification failed';
